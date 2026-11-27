@@ -627,6 +627,9 @@ export function createMockBridge(): Bridge {
     }),
     scan: async () => scan,
     replayLatest: async () => ({ ok: false, error: 'empty', path: '', analysis: null }),
+    replayAnalyze: async () => ({ ok: false, error: 'empty', path: '', analysis: null }),
+    replayPick: async () => ({ ok: false, error: 'cancelled', path: '', analysis: null }),
+    replayOpenFolder: async () => '',
     refreshApi: async () => (await createMockBridge().bootstrap()).api,
     searchMaps: async () => ({
       ok: true,

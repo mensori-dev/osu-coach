@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import type { ReplayResult } from '../types';
 import { bridge } from '../hooks';
 import { fmtNum } from '../utils';
-import { IconRefresh } from './Icons';
+import { IconExternal, IconRefresh, IconSearch } from './Icons';
 
 function secs(ms: number): string {
   const total = Math.round(ms / 1000);
@@ -46,6 +46,16 @@ export function ReplayCard() {
     }
   }, []);
 
+  const pick = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await bridge.replayPick();
+      if (res.error !== 'cancelled') setData(res);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const a = data?.analysis ?? null;
 
   return (
@@ -59,17 +69,25 @@ export function ReplayCard() {
               : 'по файлу .osr — где сыпется тап и аим'}
           </div>
         </div>
-        <button className="btn ghost replay-refresh" onClick={() => void refresh()} disabled={loading}>
-          <IconRefresh /> {loading ? 'читаю…' : 'обновить'}
-        </button>
+        <div className="replay-actions">
+          <button className="btn ghost replay-refresh" onClick={() => void pick()} disabled={loading}>
+            <IconSearch /> выбрать .osr
+          </button>
+          <button className="btn ghost replay-refresh" onClick={() => void bridge.replayOpenFolder()}>
+            <IconExternal /> папка Replays
+          </button>
+          <button className="btn ghost replay-refresh" onClick={() => void refresh()} disabled={loading}>
+            <IconRefresh /> {loading ? 'читаю…' : 'последний'}
+          </button>
+        </div>
       </div>
 
       {data && !a && !loading && (
         <div className="replay-empty">
           <b>{errorText(data?.error)}</b>
           <span>
-            Положи реплеи в <code>{data?.path || 'osu!\\Replays'}</code> — osu! пишет их сама, когда ты доигрываешь
-            карту.
+            osu! обычно кладёт реплеи в <code>{data?.path || 'osu!\\Replays'}</code> сам после доигранной карты. Если
+            папка пустая — нажми «выбрать .osr» и подсунуть файл руками.
           </span>
         </div>
       )}

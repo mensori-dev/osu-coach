@@ -417,6 +417,9 @@ export interface Bridge {
   bootstrap: () => Promise<Bootstrap>;
   scan: () => Promise<ScanResult>;
   replayLatest: () => Promise<ReplayResult>;
+  replayAnalyze: (filePath: string) => Promise<ReplayResult>;
+  replayPick: () => Promise<ReplayResult>;
+  replayOpenFolder: () => Promise<string>;
   refreshApi: () => Promise<ApiSnapshot>;
   setSettings: (patch: Partial<Settings>) => Promise<Settings>;
   searchMaps: (params: MapSearchParams) => Promise<MapSearchResult>;

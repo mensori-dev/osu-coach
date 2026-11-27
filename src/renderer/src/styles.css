@@ -5454,6 +5454,13 @@ button,
   font-size: 13.4px;
 }
 
+.replay-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .replay-empty {
   display: flex;
   flex-direction: column;

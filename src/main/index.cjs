@@ -348,6 +348,42 @@ ipcMain.handle('scan', () => rescan());
 
 ipcMain.handle('replay:latest', () => replay.latest(activeOsuDir()));
 
+ipcMain.handle('replay:analyze', (event, filePath) => {
+  if (typeof filePath !== 'string' || !filePath.toLowerCase().endsWith('.osr')) {
+    return { ok: false, error: 'bad-file', path: '', analysis: null };
+  }
+  try {
+    return replay.analyzeFile(filePath);
+  } catch (err) {
+    return { ok: false, error: 'parse-failed', detail: String(err.message || err), path: '', analysis: null };
+  }
+});
+
+ipcMain.handle('replay:pick', async () => {
+  const picked = await dialog.showOpenDialog(win, {
+    title: 'Выбери реплей osu!',
+    filters: [{ name: 'osu! replay', extensions: ['osr'] }],
+    properties: ['openFile'],
+  });
+  if (picked.canceled || !picked.filePaths?.length) return { ok: false, error: 'cancelled', path: '', analysis: null };
+  try {
+    return replay.analyzeFile(picked.filePaths[0]);
+  } catch (err) {
+    return { ok: false, error: 'parse-failed', detail: String(err.message || err), path: '', analysis: null };
+  }
+});
+
+ipcMain.handle('replay:open-folder', () => {
+  const dir = path.join(activeOsuDir(), 'Replays');
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+  } catch {
+    /* already there */
+  }
+  void shell.openPath(dir);
+  return dir;
+});
+
 ipcMain.handle('api:refresh', async () => {
   const result = await api.load(true);
   return result;

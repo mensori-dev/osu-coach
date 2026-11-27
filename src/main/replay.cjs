@@ -291,6 +291,17 @@ function buildSummary(s) {
   return { verdicts: verdicts.slice(0, 4), tips: tips.slice(0, 3) };
 }
 
+function analyzeFile(full) {
+  const parsed = parseOsr(fs.readFileSync(full));
+  return {
+    ok: true,
+    error: null,
+    path: path.dirname(full),
+    file: path.basename(full),
+    analysis: analyze(parsed.frames, parsed),
+  };
+}
+
 /** Analyzes the newest .osr in the Replays folder, or null if there is none. */
 function latest(osuDir) {
   const dir = path.join(osuDir, 'Replays');
@@ -319,14 +330,7 @@ function latest(osuDir) {
   let lastError = null;
   for (const file of withTime.slice(0, 8)) {
     try {
-      const parsed = parseOsr(fs.readFileSync(file.full));
-      return {
-        ok: true,
-        error: null,
-        path: dir,
-        file: file.name,
-        analysis: analyze(parsed.frames, parsed),
-      };
+      return analyzeFile(file.full);
     } catch (err) {
       lastError = String(err.message || err);
     }
@@ -334,4 +338,4 @@ function latest(osuDir) {
   return { ok: false, error: 'parse-failed', detail: lastError, path: dir, analysis: null };
 }
 
-module.exports = { latest, parseOsr, analyze };
+module.exports = { latest, analyzeFile, parseOsr, analyze };
