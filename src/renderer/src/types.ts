@@ -289,6 +289,7 @@ export interface Settings {
   apiClientId: string;
   apiClientSecret: string;
   onboarded: boolean;
+  tutorialSeen: boolean;
   device: Device;
   tapping: Tapping;
   goal: Goal;

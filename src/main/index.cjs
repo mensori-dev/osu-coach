@@ -34,6 +34,7 @@ const defaults = {
   apiClientId: process.env.OSU_CLIENT_ID || '',
   apiClientSecret: process.env.OSU_CLIENT_SECRET || '',
   onboarded: false,
+  tutorialSeen: false,
   device: 'unknown',
   tapping: 'unknown',
   goal: 'accuracy',

@@ -5081,3 +5081,231 @@ button {
     display: none;
   }
 }
+
+/* --- приветствие при запуске --- */
+.help-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line);
+  transition:
+    color 0.14s ease,
+    border-color 0.14s ease,
+    background 0.14s ease;
+}
+
+.help-btn:hover {
+  color: var(--text);
+  border-color: var(--line-strong);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.greeting {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  text-align: center;
+  padding: 40px;
+  cursor: pointer;
+  background:
+    radial-gradient(60% 50% at 50% 42%, color-mix(in srgb, var(--pink) 14%, transparent), transparent 70%),
+    radial-gradient(50% 50% at 60% 60%, color-mix(in srgb, var(--violet) 12%, transparent), transparent 70%), #0c0a12;
+}
+
+.greeting-mark {
+  display: grid;
+  place-items: center;
+  width: 116px;
+  height: 116px;
+  border-radius: 32px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--pink) 24%, transparent),
+    color-mix(in srgb, var(--violet) 24%, transparent)
+  );
+  box-shadow: 0 24px 70px color-mix(in srgb, var(--pink) 24%, transparent);
+}
+
+.greeting-title {
+  font-family: 'Unbounded', sans-serif;
+  font-size: clamp(30px, 5vw, 52px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+
+.greeting-sub {
+  font-size: clamp(15px, 1.7vw, 19px);
+  color: var(--muted);
+}
+
+.greeting-text span {
+  font-size: 13.2px;
+  color: var(--muted);
+}
+
+/* --- обучение --- */
+.tour-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(8, 6, 12, 0.66);
+  backdrop-filter: blur(7px);
+}
+
+.tour {
+  width: min(520px, 100%);
+  display: flex;
+  flex-direction: column;
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(30, 25, 40, 0.98), rgba(22, 18, 30, 0.98));
+  border: 1px solid color-mix(in srgb, var(--pink) 30%, var(--line));
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.tour-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tour-mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--pink) 24%, transparent),
+    color-mix(in srgb, var(--violet) 24%, transparent)
+  );
+}
+
+.tour-head b {
+  font-size: 14.4px;
+  font-weight: 700;
+}
+
+.tour-count {
+  margin-left: auto;
+  font-size: 12.4px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.tour-x {
+  width: 28px;
+  height: 28px;
+  margin-left: 4px;
+  border-radius: 8px;
+  font-size: 19px;
+  line-height: 1;
+  color: var(--muted);
+}
+
+.tour-x:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.tour-body {
+  padding: 20px 20px 8px;
+}
+
+.tour-body h3 {
+  font-family: 'Unbounded', sans-serif;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-bottom: 8px;
+}
+
+.tour-body p {
+  font-size: 14.6px;
+  line-height: 1.62;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+
+.tour-body ul {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  list-style: none;
+}
+
+.tour-body li {
+  position: relative;
+  padding-left: 20px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--text) 82%, var(--muted));
+}
+
+.tour-body li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--pink), var(--violet));
+}
+
+.tour-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px 18px;
+}
+
+.tour-dots {
+  display: flex;
+  gap: 6px;
+  margin: 0 auto;
+}
+
+.tour-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--line-strong);
+  transition:
+    background 0.14s ease,
+    width 0.14s ease;
+}
+
+.tour-dot.on {
+  width: 18px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, var(--pink), var(--violet));
+}
+
+@media (max-width: 560px) {
+  .tour-foot {
+    flex-wrap: wrap;
+  }
+
+  .tour-dots {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+  }
+}

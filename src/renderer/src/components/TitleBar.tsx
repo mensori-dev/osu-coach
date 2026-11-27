@@ -21,9 +21,10 @@ interface Props {
   live: LivePayload | null;
   demo: boolean;
   onDemo: (on: boolean) => void;
+  onHelp: () => void;
 }
 
-export function TitleBar({ tab, onTab, live, demo, onDemo }: Props) {
+export function TitleBar({ tab, onTab, live, demo, onDemo, onHelp }: Props) {
   const connected = Boolean(live?.tosu.connected);
   const status = demo
     ? { tone: 'demo', text: 'демо-режим' }
@@ -59,6 +60,10 @@ export function TitleBar({ tab, onTab, live, demo, onDemo }: Props) {
       </nav>
 
       <div className="spacer" />
+
+      <button className="help-btn" onClick={onHelp} title="как пользоваться" aria-label="Как пользоваться">
+        ?
+      </button>
 
       <button
         className="status-pill"

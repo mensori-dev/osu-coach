@@ -12,6 +12,8 @@ import { PlaysView } from './components/PlaysView';
 import { PlanView } from './components/PlanView';
 import { Onboarding } from './components/Onboarding';
 import { Splash } from './components/Splash';
+import { Greeting } from './components/Greeting';
+import { Tutorial } from './components/Tutorial';
 import { themeStyle } from './theme';
 
 export default function App() {
@@ -19,6 +21,8 @@ export default function App() {
   const [boot, setBoot] = useState<Bootstrap | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
   const [minElapsed, setMinElapsed] = useState(false);
+  const [tour, setTour] = useState(false);
+  const [greet, setGreet] = useState(true);
   const live = useLive();
 
   const load = useCallback(() => {
@@ -55,6 +59,17 @@ export default function App() {
     const api = await bridge.refreshApi();
     setBoot((prev) => (prev ? { ...prev, api } : prev));
   }, []);
+
+  // The tour shows itself once, right after onboarding. The «?» in the titlebar
+  // brings it back any time. «Seen» is stored the moment it closes.
+  const closeTour = useCallback(() => {
+    setTour(false);
+    setGreet(false);
+    if (boot && !boot.settings.tutorialSeen) void patch({ tutorialSeen: true });
+  }, [boot, patch]);
+
+  const autoTour = Boolean(boot?.settings.onboarded && !boot?.settings.tutorialSeen);
+  const tourOpen = tour || autoTour;
 
   // osu! flushes scores.db when it leaves the results screen, not the moment a
   // map ends. Keep the finished run in memory until the db catches up.
@@ -114,7 +129,17 @@ export default function App() {
       </div>
       <div className="vignette" />
 
-      <TitleBar tab={tab} onTab={setTab} live={payload} demo={demo} onDemo={(on) => patch({ demo: on })} />
+      <TitleBar
+        tab={tab}
+        onTab={setTab}
+        live={payload}
+        demo={demo}
+        onDemo={(on) => patch({ demo: on })}
+        onHelp={() => {
+          setGreet(false);
+          setTour(true);
+        }}
+      />
 
       <div className="content">
         <AnimatePresence mode="wait" initial={false}>
@@ -176,6 +201,14 @@ export default function App() {
       </div>
 
       {boot && !boot.settings.onboarded && <Onboarding boot={boot} onPatch={patch} onScan={rescan} />}
+
+      <AnimatePresence>
+        {boot && greet && minElapsed && boot.settings.onboarded && !tourOpen && (
+          <Greeting boot={boot} onClose={() => setGreet(false)} />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>{tourOpen && boot && <Tutorial onTab={setTab} onClose={closeTour} />}</AnimatePresence>
 
       <AnimatePresence>
         {!(boot && minElapsed) && (
