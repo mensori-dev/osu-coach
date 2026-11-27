@@ -460,6 +460,16 @@ function sectionBadness(s, w) {
   return s.miss * 5 + s.big * 2.5 + smear * 0.6 + (s.avgAbs / Math.max(1, w.w300)) * 0.8;
 }
 
+/** Russian plural picker for the section text. */
+function plural(n, one, few, many) {
+  const mod100 = Math.abs(n) % 100;
+  const mod10 = mod100 % 10;
+  if (mod100 > 10 && mod100 < 20) return many;
+  if (mod10 > 1 && mod10 < 5) return few;
+  if (mod10 === 1) return one;
+  return many;
+}
+
 function sectionText(s, w) {
   const label =
     s.kind === 'stream'
@@ -471,8 +481,8 @@ function sectionText(s, w) {
           : `ровный участок (${s.notes} нот)`;
   const bits = [];
   const smeared = s.late + s.early;
-  if (s.miss > 0) bits.push(`${s.miss} потеряно`);
-  if (s.big > 0) bits.push(`${s.big} грубо мимо окна`);
+  if (s.miss > 0) bits.push(`${s.miss} ${plural(s.miss, 'нота не нажата', 'ноты не нажаты', 'нот не нажато')}`);
+  if (s.big > 0) bits.push(`${s.big} ${plural(s.big, 'нота вне окна', 'ноты вне окна', 'нот вне окна')}`);
   if (smeared / s.notes >= 0.25) bits.push(`${Math.round((smeared / s.notes) * 100)}% нот смазано по времени`);
   if (Math.abs(s.avgOff) > w.w300)
     bits.push(s.avgOff > 0 ? `систематически позже на ${s.avgOff} мс` : `спешил на ${-s.avgOff} мс`);

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import type { ReplayDetail, ReplayResult } from '../types';
 import { bridge } from '../hooks';
-import { fmtNum } from '../utils';
+import { fmtNum, plural } from '../utils';
 import { IconExternal, IconRefresh, IconSearch } from './Icons';
 
 const KIND_LABEL: Record<string, string> = {
@@ -122,12 +122,21 @@ export function ReplayCard() {
             <Stat label="чередование" value={`${Math.round(a.alternate * 100)}%`} />
             <Stat label="стримов" value={String(a.streams)} />
             <Stat label="макс. джамп" value={`${a.maxJump}px`} tone={a.maxJump > 240 ? 'bad' : 'ok'} />
-            <Stat label="нот сыграно" value={String(a.taps)} />
+            <Stat label="нажатий" value={String(a.taps)} />
           </div>
 
           <ReplayChart taps={a.timeline.tapSeries} speed={a.timeline.speedSeries} />
 
           {a.detail && <ReplayDetailBlock detail={a.detail} counts={a.counts} />}
+          {!a.detail && a.detailNote && (
+            <div className="replay-caveat">
+              {a.detailNote === 'map-not-found'
+                ? 'детальный разбор не построить: этой карты нет в твоей базе osu!. Скачай её, и разбор появится.'
+                : a.detailNote === 'osu-missing'
+                  ? 'карта в базе есть, а файла .osu в Songs не нашлось. Итоги из реплея выше всё равно верные.'
+                  : 'карту не получилось разобрать, но итоги из реплея выше верные.'}
+            </div>
+          )}
 
           <div className="replay-notes">
             <div className="replay-verdicts">
@@ -194,15 +203,21 @@ function ReplayDetailBlock({
             </div>
           ))
         ) : (
-          <div className="replay-moment-empty">явных провалов не нашлось — прошёл ровно</div>
+          <div className="replay-moment-empty">
+            {counts.miss || counts.n100 || counts.n50
+              ? 'в тапах явного провала не нашлось: в стримах окна перекрываются, поэтому такие промахи тут не видны. Итоги выше — из самого реплея.'
+              : 'ни одного промаха в реплее — сыграно чисто, разбирать нечего.'}
+          </div>
         )}
       </div>
 
       <OffsetChart timeline={detail.offsetTimeline} />
 
       <div className="replay-caveat">
-        позиции промахов считаны по тапам и сетке карты (окно 50: {detail.windows.w50} мс). osu! записал {counts.miss}{' '}
-        промахов, {counts.n100} соток, {counts.n50} пятидесяток — это итоговый счёт из файла.
+        позиции считаны по тапам и сетке карты (окно 50: {detail.windows.w50} мс). В самом реплее: {counts.miss}{' '}
+        {plural(counts.miss, 'промах', 'промаха', 'промахов')}, {counts.n100}{' '}
+        {plural(counts.n100, 'сотка', 'сотки', 'соток')}, {counts.n50}{' '}
+        {plural(counts.n50, 'пятидесятка', 'пятидесятки', 'пятидесяток')}. Это официальный счёт из файла.
       </div>
     </div>
   );

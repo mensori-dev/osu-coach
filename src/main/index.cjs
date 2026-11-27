@@ -378,7 +378,10 @@ function enrichReplay(result) {
     const full = path.join(result.path, result.file);
     const parsed = replay.parseOsr(fs.readFileSync(full));
     const entry = findBeatmapByHash(activeOsuDir(), parsed.beatmapHash);
-    if (!entry) return result;
+    if (!entry) {
+      result.analysis.detailNote = 'map-not-found';
+      return result;
+    }
     result.analysis.map = {
       id: entry.id,
       setId: entry.setId,
@@ -398,8 +401,9 @@ function enrichReplay(result) {
         replay.parseBeatmap(text),
         result.analysis.map,
       );
+    else result.analysis.detailNote = 'osu-missing';
   } catch {
-    // The detail is a bonus; the base analysis is always returned.
+    result.analysis.detailNote = 'error';
   }
   return result;
 }

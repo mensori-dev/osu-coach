@@ -415,6 +415,7 @@ export interface ReplayAnalysis {
   beatmapHash?: string;
   map?: ReplayDetail['map'];
   detail?: ReplayDetail | null;
+  detailNote?: 'map-not-found' | 'osu-missing' | 'error';
   mods: string[];
   score: number;
   maxCombo: number;
