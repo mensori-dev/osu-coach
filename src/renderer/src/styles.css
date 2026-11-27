@@ -31,10 +31,11 @@ html,
 body,
 #root {
   height: 100%;
+  background: transparent;
 }
 
 body {
-  background: var(--bg);
+  background: transparent;
   color: var(--text);
   font-family: var(--font);
   font-size: 16px;
@@ -78,7 +79,7 @@ button {
 /* ---------- ambient background ---------- */
 
 .aurora {
-  position: fixed;
+  position: absolute;
   inset: -30%;
   z-index: 0;
   pointer-events: none;
@@ -98,7 +99,7 @@ button {
   height: 52vw;
   left: 6%;
   top: 2%;
-  background: radial-gradient(circle, rgba(255, 79, 154, 0.42), transparent 65%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--pink) 46%, transparent), transparent 65%);
   animation: drift-a 34s ease-in-out infinite alternate;
 }
 
@@ -107,7 +108,7 @@ button {
   height: 48vw;
   right: 2%;
   top: 12%;
-  background: radial-gradient(circle, rgba(123, 92, 255, 0.38), transparent 65%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--violet) 42%, transparent), transparent 65%);
   animation: drift-b 41s ease-in-out infinite alternate;
 }
 
@@ -116,7 +117,11 @@ button {
   height: 42vw;
   left: 28%;
   bottom: -14%;
-  background: radial-gradient(circle, rgba(47, 216, 197, 0.2), transparent 65%);
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, color-mix(in srgb, var(--pink) 50%, var(--violet)) 30%, transparent),
+    transparent 65%
+  );
   animation: drift-c 47s ease-in-out infinite alternate;
 }
 
@@ -146,7 +151,7 @@ button {
 }
 
 .vignette {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none;
@@ -161,6 +166,17 @@ button {
   height: 100%;
   display: flex;
   flex-direction: column;
+  background:
+    radial-gradient(120% 80% at 82% -12%, color-mix(in srgb, var(--violet) 20%, transparent), transparent 58%),
+    radial-gradient(110% 80% at 0% 112%, color-mix(in srgb, var(--pink) 17%, transparent), transparent 60%), var(--bg);
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.app.maxed {
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .titlebar {
@@ -195,7 +211,7 @@ button {
   height: 26px;
   display: grid;
   place-items: center;
-  filter: drop-shadow(0 0 10px rgba(255, 95, 162, 0.4));
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--pink) 45%, transparent));
 }
 
 .brand em {
@@ -245,8 +261,8 @@ button {
   position: absolute;
   inset: 0;
   border-radius: 99px;
-  background: linear-gradient(120deg, var(--pink) 0%, #ff8bc0 55%, #ffb3d5 100%);
-  box-shadow: 0 6px 20px rgba(255, 95, 162, 0.35);
+  background: linear-gradient(120deg, var(--pink) 0%, var(--violet) 100%);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--pink) 35%, transparent);
   z-index: -1;
 }
 
@@ -1164,10 +1180,10 @@ button {
   transform: scale(0.98);
 }
 .btn.primary {
-  background: linear-gradient(120deg, var(--pink), #ff8bc0);
+  background: linear-gradient(120deg, var(--pink), var(--violet));
   color: #210a16;
   border-color: transparent;
-  box-shadow: 0 10px 30px -8px rgba(255, 95, 162, 0.6);
+  box-shadow: 0 10px 30px -8px color-mix(in srgb, var(--pink) 60%, transparent);
 }
 .btn.primary:hover {
   filter: brightness(1.06);
@@ -2421,6 +2437,13 @@ button {
   color: #fff;
   background: linear-gradient(135deg, var(--violet), var(--pink));
   box-shadow: 0 10px 30px -10px rgba(255, 95, 162, 0.6);
+  overflow: hidden;
+}
+
+.profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .profile-who {
@@ -2643,7 +2666,7 @@ button {
 /* ---------- onboarding ---------- */
 
 .onboarding {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 60;
   display: grid;
@@ -2990,7 +3013,7 @@ button {
 /* ---------- onboarding v2: one question per screen ---------- */
 
 .onboarding {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 60;
   display: flex;
@@ -4347,7 +4370,7 @@ button {
 /* ---------- splash ---------- */
 
 .splash {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 200;
   display: grid;
@@ -5105,7 +5128,7 @@ button {
 }
 
 .greeting {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 70;
   display: flex;
@@ -5148,6 +5171,29 @@ button {
   color: var(--muted);
 }
 
+.greeting-bar {
+  width: min(220px, 40vw);
+  height: 3px;
+  margin-top: 10px;
+  border-radius: 99px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.greeting-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--pink), var(--violet));
+}
+
+.greeting-hint {
+  font-size: 12.4px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
 .greeting-text span {
   font-size: 13.2px;
   color: var(--muted);
@@ -5155,7 +5201,7 @@ button {
 
 /* --- обучение --- */
 .tour-backdrop {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 80;
   display: grid;
@@ -5307,5 +5353,271 @@ button {
     order: 3;
     width: 100%;
     justify-content: center;
+  }
+}
+
+/* ---------- плавность ---------- */
+:root {
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.content,
+.settings,
+.maps,
+.profile,
+.bd,
+.dash,
+.plays,
+.onboarding,
+.tour-body {
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+}
+
+/* Interactive things share one calm curve instead of snapping. */
+button,
+.tab,
+.btn,
+.status-pill,
+.help-btn,
+.win-btn,
+.theme-pick,
+.bd-row,
+.online-card,
+.warmup-row,
+.rung,
+.map-card {
+  transition-timing-function: var(--ease);
+}
+
+.card {
+  transition:
+    border-color 0.28s var(--ease),
+    box-shadow 0.28s var(--ease),
+    background 0.28s var(--ease);
+}
+
+/* Gently lift the rows you can actually click. */
+.bd-row,
+.online-card,
+.warmup-row,
+.map-card {
+  transition:
+    transform 0.24s var(--ease),
+    border-color 0.24s var(--ease),
+    background 0.24s var(--ease),
+    box-shadow 0.24s var(--ease);
+}
+
+.bd-row:hover,
+.online-card:hover,
+.warmup-row:hover {
+  transform: translateY(-2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------- разбор реплея ---------- */
+.replay-card {
+  padding: 18px 20px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.replay-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.replay-sub {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+.replay-refresh {
+  padding: 7px 12px;
+  font-size: 13.4px;
+}
+
+.replay-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed var(--line-strong);
+}
+
+.replay-empty b {
+  font-size: 14.6px;
+}
+
+.replay-empty span {
+  font-size: 13.4px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.replay-empty code {
+  font-size: 12.6px;
+  color: var(--pink);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1px 6px;
+  border-radius: 6px;
+}
+
+.replay-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.replay-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
+  gap: 8px;
+}
+
+.replay-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+
+.replay-stat span {
+  font-size: 11.4px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.replay-stat b {
+  font-size: 16.6px;
+  font-weight: 700;
+}
+
+.replay-stat.tone-good b {
+  color: var(--mint);
+}
+.replay-stat.tone-ok b {
+  color: var(--amber);
+}
+.replay-stat.tone-bad b {
+  color: var(--red);
+}
+
+.replay-chart {
+  padding: 8px 6px 0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--line);
+}
+
+.replay-chart svg {
+  width: 100%;
+  height: 130px;
+  display: block;
+}
+
+.rc-bar {
+  fill: color-mix(in srgb, var(--pink) 60%, transparent);
+}
+
+.rc-line {
+  fill: none;
+  stroke: var(--violet);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.replay-chart-legend {
+  display: flex;
+  gap: 16px;
+  padding: 4px 8px 8px;
+  font-size: 12.4px;
+  color: var(--muted);
+}
+
+.replay-chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rc-dot-bar,
+.rc-dot-line {
+  width: 12px;
+  height: 3px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.rc-dot-bar {
+  background: var(--pink);
+}
+.rc-dot-line {
+  background: var(--violet);
+}
+
+.replay-notes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.replay-verdicts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-content: flex-start;
+}
+
+.replay-verdicts span {
+  font-size: 13px;
+  padding: 6px 11px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line);
+}
+
+.replay-tips {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.replay-tips p {
+  font-size: 13.6px;
+  line-height: 1.55;
+  color: color-mix(in srgb, var(--text) 84%, var(--muted));
+}
+
+.replay-tips b {
+  color: var(--pink);
+}
+
+@media (max-width: 900px) {
+  .replay-notes {
+    grid-template-columns: 1fr;
   }
 }

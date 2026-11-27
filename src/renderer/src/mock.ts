@@ -626,6 +626,7 @@ export function createMockBridge(): Bridge {
       version: '0.1.0',
     }),
     scan: async () => scan,
+    replayLatest: async () => ({ ok: false, error: 'empty', path: '', analysis: null }),
     refreshApi: async () => (await createMockBridge().bootstrap()).api,
     searchMaps: async () => ({
       ok: true,
@@ -720,6 +721,13 @@ export function createMockBridge(): Bridge {
       };
     },
     onData: () => () => {},
-    win: { min: () => {}, max: () => {}, close: () => {} },
+    win: {
+      min: () => {},
+      max: () => {},
+      full: () => {},
+      close: () => {},
+      onFull: () => () => {},
+      onFrame: () => () => {},
+    },
   };
 }

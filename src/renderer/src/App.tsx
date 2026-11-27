@@ -14,7 +14,8 @@ import { Onboarding } from './components/Onboarding';
 import { Splash } from './components/Splash';
 import { Greeting } from './components/Greeting';
 import { Tutorial } from './components/Tutorial';
-import { themeStyle } from './theme';
+import { accentStyle, themeCover, themeStyle } from './theme';
+import { useCoverAccent } from './components/accent';
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('live');
@@ -23,6 +24,7 @@ export default function App() {
   const [minElapsed, setMinElapsed] = useState(false);
   const [tour, setTour] = useState(false);
   const [greet, setGreet] = useState(true);
+  const [maxed, setMaxed] = useState(false);
   const live = useLive();
 
   const load = useCallback(() => {
@@ -42,6 +44,22 @@ export default function App() {
   // The main process watches scores.db and pushes a fresh bootstrap whenever a
   // play lands, so every tab moves on its own.
   useEffect(() => bridge.onData(setBoot), []);
+
+  // Rounded corners belong to a floating window; a maximized or fullscreen one
+  // fills the screen and should be square.
+  useEffect(() => window.api?.win.onFrame?.((state) => setMaxed(state.maximized || state.fullscreen)), []);
+
+  // F11 toggles a true fullscreen (covers the taskbar), like the titlebar button.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'F11') {
+        event.preventDefault();
+        window.api?.win.full();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const patch = useCallback(async (next: Partial<Settings>) => {
     setBoot((prev) => (prev ? { ...prev, settings: { ...prev.settings, ...next } } : prev));
@@ -68,8 +86,14 @@ export default function App() {
     if (boot && !boot.settings.tutorialSeen) void patch({ tutorialSeen: true });
   }, [boot, patch]);
 
+  // Stable identity: the greeting must lift on its own even while live data
+  // re-renders the tree every second.
+  const closeGreet = useCallback(() => setGreet(false), []);
+
   const autoTour = Boolean(boot?.settings.onboarded && !boot?.settings.tutorialSeen);
-  const tourOpen = tour || autoTour;
+  // Order on a fresh device: onboarding → full-screen hello → the UI with the tour.
+  // The tour waits for the hello to lift so the two never overlap.
+  const tourOpen = tour || (autoTour && !greet && minElapsed);
 
   // osu! flushes scores.db when it leaves the results screen, not the moment a
   // map ends. Keep the finished run in memory until the db catches up.
@@ -120,8 +144,13 @@ export default function App() {
   const demo = Boolean(boot?.settings.demo);
   const theme = boot?.settings.theme ?? 'cover';
 
+  // «обложка» follows the live map, or the last one played when nothing is running.
+  const accentCover = theme === 'cover' ? themeCover(boot, payload) : null;
+  const coverAccent = useCoverAccent(accentCover);
+  const appStyle = themeStyle(theme) ?? (coverAccent ? accentStyle(coverAccent.a, coverAccent.b) : undefined);
+
   return (
-    <div className="app" style={themeStyle(theme)}>
+    <div className={'app' + (maxed ? ' maxed' : '')} style={appStyle}>
       <div className="aurora">
         <span className="a1" />
         <span className="a2" />
@@ -146,10 +175,10 @@ export default function App() {
           <motion.div
             key={tab}
             className="page"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.16, ease: 'easeOut' }}
+            initial={{ opacity: 0, y: 10, filter: 'blur(6px)' }}
+            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, y: -8, filter: 'blur(6px)' }}
+            transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
           >
             {tab === 'live' && (
               <LiveView
@@ -204,7 +233,7 @@ export default function App() {
 
       <AnimatePresence>
         {boot && greet && minElapsed && boot.settings.onboarded && !tourOpen && (
-          <Greeting boot={boot} onClose={() => setGreet(false)} />
+          <Greeting boot={boot} onClose={closeGreet} />
         )}
       </AnimatePresence>
 

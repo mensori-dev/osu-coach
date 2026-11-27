@@ -1,6 +1,6 @@
 {
   "name": "osu-coach",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Live osu! coach: real-time play analysis, skill curve and training plan",
   "author": "mens0ri",
@@ -24,15 +24,13 @@
     "api:check": "node --env-file=.env tools/check-api.mjs"
   },
   "dependencies": {
+    "@napi-rs/lzma": "^1.5.3",
     "ws": "^8.23.0"
   },
   "devDependencies": {
     "@fontsource/golos-text": "^5.3.0",
     "@fontsource/inter": "^5.3.0",
     "@fontsource/unbounded": "^5.3.0",
-    "framer-motion": "^14.14.0",
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1",
     "@types/node": "^26.6.11",
     "@types/react": "^19.3.3",
     "@types/react-dom": "^19.3.0",
@@ -40,8 +38,11 @@
     "@vitejs/plugin-react": "^6.3.0",
     "electron": "^45.5.0",
     "electron-builder": "^26.18.0",
+    "framer-motion": "^14.14.0",
     "oxlint": "^1.95.0",
     "prettier": "^3.10.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "typescript": "^7.0.2",
     "vite": "^8.4.0"
   },

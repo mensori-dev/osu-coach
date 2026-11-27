@@ -3,6 +3,7 @@ import type { Bootstrap, FreshPlay, ScanBucket, ScanPlay } from '../types';
 import { accTone, fmtNum, fmtTime, plural } from '../utils';
 import { IconArrowRight, IconSpark, IconStar, IconTarget } from './Icons';
 import { PreviewButton } from './Preview';
+import { ReplayCard } from './ReplayCard';
 import { openInOsu } from '../openMap';
 
 interface Props {
@@ -235,6 +236,8 @@ export function PlaysView({ boot, fresh, onScan }: Props) {
           </div>
         </div>
       </div>
+
+      <ReplayCard />
 
       <div className="bd-grid">
         <div className="card bd-list">

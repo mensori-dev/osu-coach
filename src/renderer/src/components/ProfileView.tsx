@@ -304,7 +304,9 @@ export function ProfileView({ boot, onScan }: Props) {
   return (
     <div className="profile fade-in">
       <div className="card profile-hero">
-        <div className="profile-avatar">{(name[0] || 'o').toUpperCase()}</div>
+        <div className="profile-avatar">
+          {api?.avatar ? <img src={api.avatar} alt="" /> : (name[0] || 'o').toUpperCase()}
+        </div>
         <div className="profile-who">
           <b>{name}</b>
           <span>

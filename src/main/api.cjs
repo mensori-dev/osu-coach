@@ -31,11 +31,90 @@ function compactScore(score) {
 }
 
 /**
+ * The player's own taste, so a Russian/old-pop listener is not drowned in
+ * Japanese anime farm maps just because osu! is full of them.
+ * Inferred from the «что слушаешь» answer plus the artists they actually play.
+ */
+const LANGUAGE_RULES = [
+  { lang: 'russian', words: ['русск', 'russian', 'рашн', 'по-русски', 'ру-музык'] },
+  {
+    lang: 'japanese',
+    words: [
+      'япон',
+      'japan',
+      'аниме',
+      'anime',
+      'jpop',
+      'j-pop',
+      'vocaloid',
+      'вокалоид',
+      'touhou',
+      'тохо',
+      'utau',
+      'doujin',
+      'kawaii',
+    ],
+  },
+  { lang: 'english', words: ['англ', 'english', 'американ', 'american', 'западн', 'western', 'брит', 'british'] },
+];
+const GENRE_RULES = [
+  { genre: 'pop', words: ['pop', 'поп'] },
+  { genre: 'rock', words: ['rock', 'рок', 'панк', 'metalcore'] },
+  {
+    genre: 'electronic',
+    words: ['electronic', 'электро', 'edm', 'techno', 'техно', 'dnb', 'drum and bass', 'house', 'synth'],
+  },
+  { genre: 'metal', words: ['metal', 'метал'] },
+  { genre: 'hip hop', words: ['hip hop', 'hip-hop', 'rap', 'рэп', 'хип-хоп'] },
+  { genre: 'classical', words: ['classical', 'классик', 'piano', 'пианино'] },
+  { genre: 'jazz', words: ['jazz', 'джаз'] },
+];
+const ANIME_TAGS =
+  /\b(anime|vocaloid|jpop|j-pop|touhou|utau|doujin|opening|visual novel|vtub|idol|j-rock|jrock|denpa)\b/;
+// From the osu! API: English=2, Japanese=3, Russian=12.
+const LANG_ID = { russian: 12, english: 2, japanese: 3 };
+
+function hasCjk(name) {
+  return /[\u3040-\u30ff\u3400-\u9fff\uff66-\uff9f]/.test(name);
+}
+
+function hasCyrillic(name) {
+  return /[а-яё]/i.test(name);
+}
+
+function isAnimeish(map) {
+  if (map.languageId === LANG_ID.japanese) return true;
+  return ANIME_TAGS.test(`${map.tags || ''} ${map.title || ''} ${map.artist || ''}`.toLowerCase());
+}
+
+function buildTaste(music, preferences) {
+  const text = String(music || '').toLowerCase();
+  const artists = [...new Set((preferences?.artists || []).map((item) => item.name).filter(Boolean))];
+  const languages = [];
+  const genres = [];
+
+  for (const rule of LANGUAGE_RULES) {
+    if (rule.words.some((word) => text.includes(word))) languages.push(rule.lang);
+  }
+  for (const rule of GENRE_RULES) {
+    if (rule.words.some((word) => text.includes(word))) genres.push(rule.genre);
+  }
+
+  // What is in their headphones is also visible in what they already play.
+  if (artists.some(hasCyrillic) && !languages.includes('russian')) languages.push('russian');
+  if (artists.filter(hasCjk).length >= 2) languages.push('japanese');
+  if (!languages.length) languages.push('english');
+
+  const japanese = languages.includes('japanese');
+  return { languages: [...new Set(languages)], genres, artists, avoidJapanese: !japanese };
+}
+
+/**
  * How close a candidate map is to the player's own taste.
  * Favourite mappers and artists weigh the most, then tempo, difficulty,
  * length and AR. No randomness: same data, same order.
  */
-function tasteScore(map, preferences, target) {
+function tasteScore(map, preferences, target, taste) {
   if (!preferences) return 0;
 
   let score = 0;
@@ -63,13 +142,23 @@ function tasteScore(map, preferences, target) {
 
   if (map.status === 'ranked' || map.status === 'approved') score += 4;
 
+  if (taste) {
+    if (taste.avoidJapanese) {
+      if (map.languageId === LANG_ID.japanese) score -= 55;
+      else if (isAnimeish(map)) score -= 24;
+    }
+    if (taste.languages.includes('russian') && map.languageId === LANG_ID.russian) score += 42;
+    if (taste.languages.includes('english') && map.languageId === LANG_ID.english) score += 24;
+    if (taste.artists.some((name) => name.toLowerCase() === map.artist.toLowerCase())) score += 20;
+  }
+
   return score;
 }
 
 /**
  * Why this map fits the player's taste, as short human-readable reasons.
  */
-function tasteReasons(map, preferences, target) {
+function tasteReasons(map, preferences, target, taste) {
   const reasons = [];
   if (!preferences) return reasons;
 
@@ -86,6 +175,12 @@ function tasteReasons(map, preferences, target) {
   const lengthMedian = preferences.length?.median;
   if (lengthMedian && Math.abs(map.drainTime - lengthMedian) <= 30) reasons.push('такая же длина');
   if (target && Math.abs(map.stars - target) <= 0.35) reasons.push('твой уровень');
+
+  if (taste) {
+    if (map.languageId === LANG_ID.russian) reasons.push('русский трек');
+    else if (map.languageId === LANG_ID.english) reasons.push('западный трек');
+    else if (taste.avoidJapanese && isAnimeish(map)) reasons.push('похоже на аниме');
+  }
 
   return reasons.slice(0, 3);
 }
@@ -156,14 +251,21 @@ class OsuApi {
     cursor = '',
     force = false,
     preferences = null,
+    music = '',
   } = {}) {
     if (!this.configured()) {
       return { ok: false, error: 'no credentials', total: 0, maps: [], next: null };
     }
 
+    const taste = buildTaste(music, preferences);
     const creators = (preferences?.creators || []).slice(0, 2);
     const artists = (preferences?.artists || []).slice(0, 2);
-    const prefKey = [creators[0]?.name || '', artists[0]?.name || ''].join('|');
+    const prefKey = [
+      creators[0]?.name || '',
+      artists[0]?.name || '',
+      taste.languages.join(','),
+      taste.genres.join(','),
+    ].join('|');
 
     const key = JSON.stringify([
       minStars,
@@ -193,6 +295,10 @@ class OsuApi {
         const name = String(item.name || '').replace(/"/g, '');
         if (name) queries.push(`artist="${name}" ${range}`);
       }
+      // Pull real pools in the languages and genres the player asked for,
+      // instead of relying on the anime-heavy global rating.
+      for (const lang of taste.languages) queries.push(`language=${lang} ${range}`);
+      for (const genre of taste.genres) queries.push(`genre=${genre} ${range}`);
     }
 
     const cursorPart = cursor ? `&cursor_string=${encodeURIComponent(cursor)}` : '';
@@ -247,13 +353,16 @@ class OsuApi {
           od: pick.od ?? 0,
           cover: set.covers?.cover || set.covers?.list || set.covers?.card || '',
           status: set.status || '',
+          languageId: set.language_id ?? null,
+          genreId: set.genre_id ?? null,
+          tags: set.tags || '',
         });
       }
     }
 
     const maps = [...bySet.values()].map((map) => ({
       map,
-      score: tasteScore(map, preferences, target),
+      score: tasteScore(map, preferences, target, taste),
     }));
     maps.sort((a, b) => b.score - a.score || Math.abs(a.map.stars - target) - Math.abs(b.map.stars - target));
 
@@ -268,7 +377,7 @@ class OsuApi {
       if ((perArtist.get(artist) || 0) >= 2) continue;
       perMapper.set(mapper, (perMapper.get(mapper) || 0) + 1);
       perArtist.set(artist, (perArtist.get(artist) || 0) + 1);
-      picked.push({ ...entry.map, why: tasteReasons(entry.map, preferences, target) });
+      picked.push({ ...entry.map, why: tasteReasons(entry.map, preferences, target, taste) });
       if (picked.length >= limit) break;
     }
 

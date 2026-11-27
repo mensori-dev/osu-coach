@@ -370,6 +370,38 @@ export interface TosuLaunchResult {
   error?: string;
 }
 
+export interface ReplayAnalysis {
+  player: string;
+  at: number;
+  mods: string[];
+  score: number;
+  maxCombo: number;
+  perfect: boolean;
+  counts: { n300: number; n100: number; n50: number; miss: number };
+  accuracy: number;
+  durationMs: number;
+  taps: number;
+  tapBpm: number;
+  alternate: number;
+  streams: number;
+  maxBurst: number;
+  maxJump: number;
+  avgJump: number;
+  bigJumps: number;
+  gaps: { at: number; ms: number }[];
+  timeline: { tapSeries: number[]; speedSeries: number[]; buckets: number; perMs: number };
+  summary: { verdicts: string[]; tips: string[] };
+}
+
+export interface ReplayResult {
+  ok: boolean;
+  error: string | null;
+  detail?: string | null;
+  path: string;
+  file?: string;
+  analysis: ReplayAnalysis | null;
+}
+
 export interface Bootstrap {
   settings: Settings;
   live: LivePayload;
@@ -384,6 +416,7 @@ export interface Bootstrap {
 export interface Bridge {
   bootstrap: () => Promise<Bootstrap>;
   scan: () => Promise<ScanResult>;
+  replayLatest: () => Promise<ReplayResult>;
   refreshApi: () => Promise<ApiSnapshot>;
   setSettings: (patch: Partial<Settings>) => Promise<Settings>;
   searchMaps: (params: MapSearchParams) => Promise<MapSearchResult>;
@@ -396,5 +429,12 @@ export interface Bridge {
   openExternal: (url: string) => Promise<unknown>;
   onLive: (cb: (payload: LivePayload) => void) => () => void;
   onData: (cb: (boot: Bootstrap) => void) => () => void;
-  win: { min: () => void; max: () => void; close: () => void };
+  win: {
+    min: () => void;
+    max: () => void;
+    full: () => void;
+    close: () => void;
+    onFull: (cb: (on: boolean) => void) => () => void;
+    onFrame: (cb: (state: { maximized: boolean; fullscreen: boolean }) => void) => () => void;
+  };
 }

@@ -1,7 +1,8 @@
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import type { LivePayload } from '../types';
 import { BrandMark } from './BrandMark';
-import { IconClose, IconMinus, IconSquare } from './Icons';
+import { IconClose, IconCompress, IconExpand, IconMinus, IconSquare } from './Icons';
 
 export type Tab = 'live' | 'plays' | 'plan' | 'dash' | 'maps' | 'profile' | 'settings';
 
@@ -26,6 +27,10 @@ interface Props {
 
 export function TitleBar({ tab, onTab, live, demo, onDemo, onHelp }: Props) {
   const connected = Boolean(live?.tosu.connected);
+  const [full, setFull] = useState(false);
+
+  useEffect(() => window.api?.win.onFull?.(setFull), []);
+
   const status = demo
     ? { tone: 'demo', text: 'демо-режим' }
     : connected
@@ -33,7 +38,12 @@ export function TitleBar({ tab, onTab, live, demo, onDemo, onHelp }: Props) {
       : { tone: 'off', text: 'tosu выключен' };
 
   return (
-    <header className="titlebar">
+    <header
+      className="titlebar"
+      onDoubleClick={(event) => {
+        if (event.target === event.currentTarget) window.api?.win.full();
+      }}
+    >
       <div className="brand">
         <span className="brand-mark">
           <BrandMark size={24} />
@@ -77,6 +87,13 @@ export function TitleBar({ tab, onTab, live, demo, onDemo, onHelp }: Props) {
       <div className="win-controls">
         <button className="win-btn" onClick={() => window.api?.win.min()} aria-label="Свернуть">
           <IconMinus />
+        </button>
+        <button
+          className="win-btn"
+          onClick={() => window.api?.win.full()}
+          aria-label={full ? 'Выйти из полного экрана' : 'На весь экран'}
+        >
+          {full ? <IconCompress /> : <IconExpand />}
         </button>
         <button className="win-btn" onClick={() => window.api?.win.max()} aria-label="Развернуть">
           <IconSquare />

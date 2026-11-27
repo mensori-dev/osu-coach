@@ -12,6 +12,7 @@ const { TosuBridge } = require('./tosu.cjs');
 const { normalizeTosu, idlePayload } = require('./live.cjs');
 const { Demo } = require('./demo.cjs');
 const { startTosu } = require('./tosu-launch.cjs');
+const replay = require('./replay.cjs');
 
 const rootDir = app.getAppPath();
 loadEnv([
@@ -282,8 +283,10 @@ function createWindow() {
     minHeight: 700,
     show: false,
     frame: false,
-    backgroundColor: '#08070c',
-    roundedCorners: true,
+    transparent: true,
+    backgroundColor: '#00000000',
+    roundedCorners: false,
+    hasShadow: false,
     icon: path.join(rootDir, 'build', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.cjs'),
@@ -294,8 +297,26 @@ function createWindow() {
     },
   });
 
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => {
+    win.show();
+    setTimeout(sendFrame, 80);
+  });
   loadRenderer(win);
+
+  const sendFrame = () => {
+    if (!win || win.isDestroyed()) return;
+    win.webContents.send('win:frame', { maximized: win.isMaximized(), fullscreen: win.isFullScreen() });
+  };
+  win.on('maximize', sendFrame);
+  win.on('unmaximize', sendFrame);
+  win.on('enter-full-screen', () => {
+    win?.webContents.send('win:fullstate', true);
+    sendFrame();
+  });
+  win.on('leave-full-screen', () => {
+    win?.webContents.send('win:fullstate', false);
+    sendFrame();
+  });
 
   win.on('closed', () => {
     win = null;
@@ -325,6 +346,8 @@ ipcMain.handle('bootstrap', () => bootstrap());
 
 ipcMain.handle('scan', () => rescan());
 
+ipcMain.handle('replay:latest', () => replay.latest(activeOsuDir()));
+
 ipcMain.handle('api:refresh', async () => {
   const result = await api.load(true);
   return result;
@@ -334,7 +357,7 @@ ipcMain.handle('maps:installed', () => installedSetIds());
 
 ipcMain.handle('maps:search', async (event, params) => {
   try {
-    return await api.searchMaps({ ...params, preferences: scan?.preferences || null });
+    return await api.searchMaps({ ...params, preferences: scan?.preferences || null, music: settings.music || '' });
   } catch (err) {
     return { ok: false, error: String(err.message || err), total: 0, maps: [], next: null };
   }
@@ -415,7 +438,8 @@ ipcMain.handle('settings:set', (event, patch) => {
 });
 
 ipcMain.handle('cover:data', async (event, url) => {
-  if (typeof url !== 'string' || !/^http:\/\/127\.0\.0\.1:\d+\//.test(url)) return null;
+  const allowed = /^http:\/\/127\.0\.0\.1:\d+\//.test(url) || url.startsWith('https://assets.ppy.sh/');
+  if (typeof url !== 'string' || !allowed) return null;
   const cached = coverCache.get(url);
   if (cached && Date.now() - cached.at < 10 * 60 * 1000) return cached.data;
   try {
@@ -677,6 +701,10 @@ ipcMain.on('win:max', () => {
   if (!win) return;
   if (win.isMaximized()) win.unmaximize();
   else win.maximize();
+});
+ipcMain.on('win:full', () => {
+  if (!win) return;
+  win.setFullScreen(!win.isFullScreen());
 });
 ipcMain.on('win:close', () => win?.close());
 
