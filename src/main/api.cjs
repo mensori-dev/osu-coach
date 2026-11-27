@@ -84,6 +84,9 @@ function hasCyrillic(name) {
 
 function isAnimeish(map) {
   if (map.languageId === LANG_ID.japanese) return true;
+  const uni = `${map.artistUnicode || ''} ${map.titleUnicode || ''}`;
+  if (hasCjk(uni)) return true;
+  if (hasCjk(`${map.artist || ''} ${map.title || ''}`)) return true;
   return ANIME_TAGS.test(`${map.tags || ''} ${map.title || ''} ${map.artist || ''}`.toLowerCase());
 }
 
@@ -355,29 +358,42 @@ class OsuApi {
           status: set.status || '',
           languageId: set.language_id ?? null,
           genreId: set.genre_id ?? null,
+          artistUnicode: set.artist_unicode || '',
+          titleUnicode: set.title_unicode || '',
           tags: set.tags || '',
         });
       }
     }
 
-    const maps = [...bySet.values()].map((map) => ({
-      map,
-      score: tasteScore(map, preferences, target, taste),
-    }));
-    maps.sort((a, b) => b.score - a.score || Math.abs(a.map.stars - target) - Math.abs(b.map.stars - target));
+    const maps = [...bySet.values()]
+      .map((map) => ({ map, score: tasteScore(map, preferences, target, taste) }))
+      .sort((a, b) => b.score - a.score || Math.abs(a.map.stars - target) - Math.abs(b.map.stars - target));
+
+    // When the player is not into Japanese music, anime/doujin maps go last, so
+    // the page they actually see is about their taste. They are only used if
+    // there is nothing better.
+    const pools = taste.avoidJapanese
+      ? [maps.filter((e) => !isAnimeish(e.map)), maps.filter((e) => isAnimeish(e.map))]
+      : [maps];
 
     // Keep the list varied: no mapper or artist takes over the whole page.
     const picked = [];
     const perMapper = new Map();
     const perArtist = new Map();
-    for (const entry of maps) {
-      const mapper = entry.map.mapper.toLowerCase();
-      const artist = entry.map.artist.toLowerCase();
-      if ((perMapper.get(mapper) || 0) >= 2) continue;
-      if ((perArtist.get(artist) || 0) >= 2) continue;
-      perMapper.set(mapper, (perMapper.get(mapper) || 0) + 1);
-      perArtist.set(artist, (perArtist.get(artist) || 0) + 1);
-      picked.push({ ...entry.map, why: tasteReasons(entry.map, preferences, target, taste) });
+    const seen = new Set();
+    for (const pool of pools) {
+      for (const entry of pool) {
+        if (seen.has(entry.map.setId)) continue;
+        const mapper = entry.map.mapper.toLowerCase();
+        const artist = entry.map.artist.toLowerCase();
+        if ((perMapper.get(mapper) || 0) >= 2) continue;
+        if ((perArtist.get(artist) || 0) >= 2) continue;
+        perMapper.set(mapper, (perMapper.get(mapper) || 0) + 1);
+        perArtist.set(artist, (perArtist.get(artist) || 0) + 1);
+        seen.add(entry.map.setId);
+        picked.push({ ...entry.map, why: tasteReasons(entry.map, preferences, target, taste) });
+        if (picked.length >= limit) break;
+      }
       if (picked.length >= limit) break;
     }
 
