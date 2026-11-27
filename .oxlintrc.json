@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "unicorn", "typescript", "oxc"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn"
+  },
+  "env": {
+    "browser": true,
+    "node": true,
+    "es2024": true
+  },
+  "rules": {
+    "no-unused-vars": "warn",
+    "no-console": "off",
+    "react/react-in-jsx-scope": "off",
+    "react/no-array-index-key": "off",
+    "unicorn/no-array-sort": "off",
+    "unicorn/no-array-reverse": "off",
+    "unicorn/require-module-specifiers": "off"
+  },
+  "ignorePatterns": ["dist/**", "node_modules/**", "tools/**"]
+}

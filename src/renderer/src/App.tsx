@@ -1,0 +1,193 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import type { Bootstrap, FreshPlay, Settings } from './types';
+import { bridge, useLive } from './hooks';
+import { TitleBar, type Tab } from './components/TitleBar';
+import { LiveView } from './components/LiveView';
+import { Dashboard } from './components/Dashboard';
+import { SettingsView } from './components/SettingsView';
+import { MapFinder } from './components/MapFinder';
+import { ProfileView } from './components/ProfileView';
+import { PlaysView } from './components/PlaysView';
+import { PlanView } from './components/PlanView';
+import { Onboarding } from './components/Onboarding';
+import { Splash } from './components/Splash';
+import { themeStyle } from './theme';
+
+export default function App() {
+  const [tab, setTab] = useState<Tab>('live');
+  const [boot, setBoot] = useState<Bootstrap | null>(null);
+  const [bootError, setBootError] = useState<string | null>(null);
+  const [minElapsed, setMinElapsed] = useState(false);
+  const live = useLive();
+
+  const load = useCallback(() => {
+    bridge
+      .bootstrap()
+      .then(setBoot)
+      .catch((err) => setBootError(String(err instanceof Error ? err.message : err)));
+  }, []);
+
+  useEffect(() => {
+    load();
+    // A splash that vanishes in 80 ms reads as a glitch, not as loading.
+    const id = window.setTimeout(() => setMinElapsed(true), 900);
+    return () => window.clearTimeout(id);
+  }, [load]);
+
+  // The main process watches scores.db and pushes a fresh bootstrap whenever a
+  // play lands, so every tab moves on its own.
+  useEffect(() => bridge.onData(setBoot), []);
+
+  const patch = useCallback(async (next: Partial<Settings>) => {
+    setBoot((prev) => (prev ? { ...prev, settings: { ...prev.settings, ...next } } : prev));
+    const saved = await bridge.setSettings(next);
+    setBoot((prev) => (prev ? { ...prev, settings: saved } : prev));
+  }, []);
+
+  const rescan = useCallback(async () => {
+    await bridge.scan();
+    const fresh = await bridge.bootstrap();
+    setBoot(fresh);
+  }, []);
+
+  const refreshApi = useCallback(async () => {
+    const api = await bridge.refreshApi();
+    setBoot((prev) => (prev ? { ...prev, api } : prev));
+  }, []);
+
+  // osu! flushes scores.db when it leaves the results screen, not the moment a
+  // map ends. Keep the finished run in memory until the db catches up.
+  const [fresh, setFresh] = useState<FreshPlay | null>(null);
+  const prevState = useRef<string | null>(null);
+  const liveRef = useRef(live);
+  useEffect(() => {
+    liveRef.current = live;
+  }, [live]);
+
+  const liveState = live?.state ?? null;
+  useEffect(() => {
+    const wasResults = prevState.current === 'results';
+    prevState.current = liveState;
+
+    if (liveState === 'results') {
+      const current = liveRef.current;
+      if (!wasResults && current?.beatmap && current?.play) {
+        setFresh({
+          id: current.beatmap.id,
+          title: current.beatmap.title,
+          artist: current.beatmap.artist,
+          diff: current.beatmap.version,
+          mapper: current.beatmap.mapper,
+          stars: current.beatmap.stars,
+          acc: current.play.accuracy,
+          mods: current.play.mods,
+          combo: current.play.combo,
+          miss: current.play.hits.miss,
+          at: Date.now(),
+          setId: current.beatmap.setId,
+          bpm: current.beatmap.bpm,
+          ar: current.beatmap.ar,
+          drainTime: Math.round(current.beatmap.lengthMs / 1000),
+        });
+      }
+      // The db is flushed on leaving results, but the exact moment differs per
+      // install. Try a few times; the folder watcher is the safety net.
+      void rescan();
+      const timers = [2500, 7000, 16000].map((ms) => window.setTimeout(() => void rescan(), ms));
+      return () => timers.forEach((timer) => window.clearTimeout(timer));
+    }
+
+    if (wasResults) void rescan();
+  }, [liveState, rescan]);
+
+  const payload = live ?? boot?.live ?? null;
+  const demo = Boolean(boot?.settings.demo);
+  const theme = boot?.settings.theme ?? 'cover';
+
+  return (
+    <div className="app" style={themeStyle(theme)}>
+      <div className="aurora">
+        <span className="a1" />
+        <span className="a2" />
+        <span className="a3" />
+      </div>
+      <div className="vignette" />
+
+      <TitleBar tab={tab} onTab={setTab} live={payload} demo={demo} onDemo={(on) => patch({ demo: on })} />
+
+      <div className="content">
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={tab}
+            className="page"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.16, ease: 'easeOut' }}
+          >
+            {tab === 'live' && (
+              <LiveView
+                live={payload}
+                demo={demo}
+                boot={boot}
+                accent={theme === 'cover'}
+                onDemo={(on) => patch({ demo: on })}
+                onOpenPlays={() => setTab('plays')}
+                onTab={setTab}
+              />
+            )}
+
+            {tab === 'plays' &&
+              (boot ? (
+                <PlaysView boot={boot} fresh={fresh} onScan={rescan} />
+              ) : (
+                <div className="empty">Читаю данные…</div>
+              ))}
+
+            {tab === 'plan' &&
+              (boot ? (
+                <PlanView boot={boot} onOpenMaps={() => setTab('maps')} />
+              ) : (
+                <div className="empty">Читаю данные…</div>
+              ))}
+
+            {tab === 'dash' &&
+              (boot ? (
+                <Dashboard boot={boot} live={live} onRefresh={refreshApi} onTab={setTab} />
+              ) : (
+                <div className="empty">Читаю данные…</div>
+              ))}
+
+            {tab === 'maps' &&
+              (boot ? <MapFinder boot={boot} onScan={rescan} /> : <div className="empty">Читаю данные…</div>)}
+
+            {tab === 'profile' &&
+              (boot ? <ProfileView boot={boot} onScan={rescan} /> : <div className="empty">Читаю данные…</div>)}
+
+            {tab === 'settings' &&
+              (boot ? (
+                <SettingsView boot={boot} onPatch={patch} onScan={rescan} onRefresh={refreshApi} />
+              ) : (
+                <div className="empty">Читаю данные…</div>
+              ))}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+
+      {boot && !boot.settings.onboarded && <Onboarding boot={boot} onPatch={patch} onScan={rescan} />}
+
+      <AnimatePresence>
+        {!(boot && minElapsed) && (
+          <Splash
+            error={bootError}
+            onRetry={() => {
+              setBootError(null);
+              load();
+            }}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}

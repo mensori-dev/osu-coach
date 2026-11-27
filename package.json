@@ -1,0 +1,51 @@
+{
+  "name": "osu-coach",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Live osu! coach: real-time play analysis, skill curve and training plan",
+  "author": "mens0ri",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mensori-dev/osu-coach.git"
+  },
+  "main": "src/main/index.cjs",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "vite build",
+    "start": "electron .",
+    "dist": "npm run build && electron-builder --win nsis",
+    "pack": "npm run build && electron-builder --dir",
+    "lint": "oxlint src",
+    "format": "prettier --write src scripts",
+    "format:check": "prettier --check src scripts",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run lint && npm run format:check",
+    "api:check": "node --env-file=.env tools/check-api.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.23.0"
+  },
+  "devDependencies": {
+    "@fontsource/golos-text": "^5.3.0",
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/unbounded": "^5.3.0",
+    "framer-motion": "^14.14.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "@types/node": "^26.6.11",
+    "@types/react": "^19.3.3",
+    "@types/react-dom": "^19.3.0",
+    "@types/ws": "^8.18.2",
+    "@vitejs/plugin-react": "^6.3.0",
+    "electron": "^45.5.0",
+    "electron-builder": "^26.18.0",
+    "oxlint": "^1.95.0",
+    "prettier": "^3.10.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.4.0"
+  },
+  "allowScripts": {
+    "electron-winstaller@5.4.0": true
+  }
+}

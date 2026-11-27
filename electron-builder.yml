@@ -1,0 +1,37 @@
+appId: com.mens0ri.osucoach
+productName: osu! Coach
+copyright: Copyright © 2026 mens0ri
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/renderer/**
+  - src/main/**
+  - src/preload/**
+  - package.json
+  - '!**/*.map'
+
+asar: true
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+  artifactName: osu-coach-${version}-setup.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: osu! Coach
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
+  deleteAppDataOnUninstall: false
+  runAfterFinish: true
