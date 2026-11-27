@@ -370,9 +370,51 @@ export interface TosuLaunchResult {
   error?: string;
 }
 
+export interface ReplaySection {
+  kind: 'stream' | 'burst' | 'jump' | 'flow';
+  startMs: number;
+  endMs: number;
+  notes: number;
+  avgOff: number;
+  avgAbs: number;
+  jitter: number;
+  late: number;
+  early: number;
+  big: number;
+  miss: number;
+  worst: number;
+  avgSpace: number;
+  maxSpace: number;
+  nps: number;
+}
+
+export interface ReplayDetail {
+  map: {
+    id: number;
+    setId: number;
+    artist: string;
+    title: string;
+    version: string;
+    stars: number;
+    od: number;
+    bpm: number;
+    objects: number;
+  } | null;
+  objects: number;
+  windows: { w300: number; w100: number; w50: number };
+  derived: { n300: number; n100: number; n50: number; miss: number };
+  profile: { streamAbs: number; jumpAbs: number; verdict: string | null };
+  sections: ReplaySection[];
+  moments: { at: number; kind: string; text: string; badness: number }[];
+  offsetTimeline: { buckets: number; perMs: number; avg: (number | null)[] };
+}
+
 export interface ReplayAnalysis {
   player: string;
   at: number;
+  beatmapHash?: string;
+  map?: ReplayDetail['map'];
+  detail?: ReplayDetail | null;
   mods: string[];
   score: number;
   maxCombo: number;

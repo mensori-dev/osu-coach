@@ -6,5 +6,6 @@ data/
 tools/tosu/
 *.log
 *.txt
+/0
 .DS_Store
 Thumbs.db

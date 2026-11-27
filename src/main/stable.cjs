@@ -626,4 +626,29 @@ function scanStable(osuDir) {
   };
 }
 
-module.exports = { scanStable, parseOsuDb, parseScoresDb, modsToArray, pickStars };
+/** Cached osu!.db, so replay lookups don't re-parse it on every poll. */
+const osuDbCache = new Map();
+
+function findBeatmapByHash(osuDir, hash) {
+  if (!osuDir || !hash) return null;
+  const dbPath = path.join(osuDir, 'osu!.db');
+  let mtime = 0;
+  try {
+    mtime = fs.statSync(dbPath).mtimeMs;
+  } catch {
+    return null;
+  }
+  let entry = osuDbCache.get(osuDir);
+  if (!entry || entry.mtime !== mtime) {
+    try {
+      entry = { mtime, db: parseOsuDb(fs.readFileSync(dbPath)) };
+      osuDbCache.set(osuDir, entry);
+    } catch {
+      return null;
+    }
+  }
+  const want = String(hash).toLowerCase();
+  return entry.db.maps.find((m) => m.md5.toLowerCase() === want) || null;
+}
+
+module.exports = { scanStable, parseOsuDb, parseScoresDb, modsToArray, pickStars, findBeatmapByHash };

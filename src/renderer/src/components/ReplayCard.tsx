@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import type { ReplayResult } from '../types';
+import type { ReplayDetail, ReplayResult } from '../types';
 import { bridge } from '../hooks';
 import { fmtNum } from '../utils';
 import { IconExternal, IconRefresh, IconSearch } from './Icons';
+
+const KIND_LABEL: Record<string, string> = {
+  stream: 'стрим',
+  burst: 'бёрст',
+  jump: 'джамп',
+  flow: 'ровно',
+};
 
 function secs(ms: number): string {
   const total = Math.round(ms / 1000);
@@ -120,6 +127,8 @@ export function ReplayCard() {
 
           <ReplayChart taps={a.timeline.tapSeries} speed={a.timeline.speedSeries} />
 
+          {a.detail && <ReplayDetailBlock detail={a.detail} counts={a.counts} />}
+
           <div className="replay-notes">
             <div className="replay-verdicts">
               {a.summary.verdicts.map((line) => (
@@ -140,6 +149,107 @@ export function ReplayCard() {
   );
 }
 
+function ReplayDetailBlock({
+  detail,
+  counts,
+}: {
+  detail: ReplayDetail;
+  counts: { n300: number; n100: number; n50: number; miss: number };
+}) {
+  const m = detail.map;
+  const { streamAbs, jumpAbs, verdict } = detail.profile;
+  return (
+    <div className="replay-detail">
+      {m && (
+        <div className="replay-map">
+          <span className="replay-map-title">
+            {m.artist} — {m.title}
+          </span>
+          <span className="replay-map-meta">
+            [{m.version}] · {fmtNum(m.stars, 2)}★ · OD {fmtNum(m.od, 1)}
+            {m.bpm ? ` · ${Math.round(m.bpm)} bpm` : ''} · {m.objects} нот
+          </span>
+        </div>
+      )}
+
+      <div className="replay-profile">
+        <div className="replay-profile-item">
+          <span>стримы</span>
+          <b className={streamAbs > jumpAbs + 5 ? 'tone-bad' : ''}>{streamAbs} мс</b>
+        </div>
+        <div className="replay-profile-item">
+          <span>джампы</span>
+          <b className={jumpAbs > streamAbs + 5 ? 'tone-bad' : ''}>{jumpAbs} мс</b>
+        </div>
+        <div className="replay-profile-verdict">{verdict ?? 'мало данных для сравнения'}</div>
+      </div>
+
+      <div className="replay-moments">
+        <div className="replay-moments-title">где сыпалось</div>
+        {detail.moments.length ? (
+          detail.moments.map((moment) => (
+            <div className="replay-moment" key={`${moment.at}-${moment.text}`}>
+              <span className={'rm-kind rm-' + moment.kind}>{KIND_LABEL[moment.kind] ?? moment.kind}</span>
+              <span className="rm-text">{moment.text}</span>
+            </div>
+          ))
+        ) : (
+          <div className="replay-moment-empty">явных провалов не нашлось — прошёл ровно</div>
+        )}
+      </div>
+
+      <OffsetChart timeline={detail.offsetTimeline} />
+
+      <div className="replay-caveat">
+        позиции промахов считаны по тапам и сетке карты (окно 50: {detail.windows.w50} мс). osu! записал {counts.miss}{' '}
+        промахов, {counts.n100} соток, {counts.n50} пятидесяток — это итоговый счёт из файла.
+      </div>
+    </div>
+  );
+}
+
+function OffsetChart({ timeline }: { timeline: ReplayDetail['offsetTimeline'] }) {
+  const avg = timeline.avg;
+  if (!avg.length) return null;
+  const w = 600;
+  const h = 76;
+  const mid = h / 2;
+  const peak = Math.max(20, ...avg.map((v) => (v == null ? 0 : Math.abs(v))));
+  const bw = w / avg.length;
+  return (
+    <div className="replay-offsets">
+      <div className="replay-offsets-legend">
+        <span>
+          <i className="ro-early" /> рано
+        </span>
+        <span>тайминг по ходу карты</span>
+        <span>
+          поздно <i className="ro-late" />
+        </span>
+      </div>
+      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
+        <line x1="0" y1={mid} x2={w} y2={mid} className="ro-axis" />
+        {avg.map((v, i) => {
+          if (v == null) return null;
+          const bh = (Math.abs(v) / peak) * (mid - 6);
+          const late = v >= 0;
+          return (
+            <rect
+              key={i}
+              x={i * bw + 0.5}
+              y={late ? mid : mid - bh}
+              width={Math.max(1, bw - 1)}
+              height={bh}
+              rx="1.5"
+              className={late ? 'ro-late' : 'ro-early'}
+            />
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 function Stat({ label, value, tone }: { label: string; value: string; tone?: 'good' | 'ok' | 'bad' }) {
   return (
     <div className={'replay-stat' + (tone ? ' tone-' + tone : '')}>
@@ -148,7 +258,6 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: 'go
     </div>
   );
 }
-
 function ReplayChart({ taps, speed }: { taps: number[]; speed: number[] }) {
   const n = Math.max(taps.length, speed.length);
   if (n < 2) return null;

@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const { spawn, execFile } = require('node:child_process');
 const { loadEnv } = require('./env.cjs');
 const { readJson, writeJson } = require('./store.cjs');
-const { scanStable } = require('./stable.cjs');
+const { scanStable, findBeatmapByHash } = require('./stable.cjs');
 const { OsuApi } = require('./api.cjs');
 const { TosuBridge } = require('./tosu.cjs');
 const { normalizeTosu, idlePayload } = require('./live.cjs');
@@ -346,14 +346,70 @@ ipcMain.handle('bootstrap', () => bootstrap());
 
 ipcMain.handle('scan', () => rescan());
 
-ipcMain.handle('replay:latest', () => replay.latest(activeOsuDir()));
+ipcMain.handle('replay:latest', () => enrichReplay(replay.latest(activeOsuDir())));
+
+function readLocalOsu(entry) {
+  const dir = path.join(activeOsuDir(), 'Songs', entry.folder || '');
+  let files;
+  try {
+    files = fs.readdirSync(dir).filter((name) => name.toLowerCase().endsWith('.osu'));
+  } catch {
+    return null;
+  }
+  const want = new RegExp(`BeatmapID\\s*:\\s*${entry.id}\\b`);
+  for (const file of files) {
+    try {
+      const text = fs.readFileSync(path.join(dir, file), 'utf8');
+      if (want.test(text)) return text;
+    } catch {
+      // unreadable file, keep looking
+    }
+  }
+  return files.length === 1 ? fs.readFileSync(path.join(dir, files[0]), 'utf8') : null;
+}
+
+/**
+ * Adds the per-moment breakdown to a basic analysis. The beatmap is located
+ * through osu!.db (it stores every beatmap's MD5), so no API keys are needed.
+ */
+function enrichReplay(result) {
+  if (!result?.ok || !result.analysis || !result.file || !result.path) return result;
+  try {
+    const full = path.join(result.path, result.file);
+    const parsed = replay.parseOsr(fs.readFileSync(full));
+    const entry = findBeatmapByHash(activeOsuDir(), parsed.beatmapHash);
+    if (!entry) return result;
+    result.analysis.map = {
+      id: entry.id,
+      setId: entry.setId,
+      artist: entry.artist,
+      title: entry.title,
+      version: entry.diff,
+      stars: entry.stars,
+      od: entry.od,
+      bpm: entry.bpm,
+      objects: entry.objects,
+    };
+    const text = readLocalOsu(entry);
+    if (text)
+      result.analysis.detail = replay.analyzeDetail(
+        parsed.frames,
+        parsed,
+        replay.parseBeatmap(text),
+        result.analysis.map,
+      );
+  } catch {
+    // The detail is a bonus; the base analysis is always returned.
+  }
+  return result;
+}
 
 ipcMain.handle('replay:analyze', (event, filePath) => {
   if (typeof filePath !== 'string' || !filePath.toLowerCase().endsWith('.osr')) {
     return { ok: false, error: 'bad-file', path: '', analysis: null };
   }
   try {
-    return replay.analyzeFile(filePath);
+    return enrichReplay(replay.analyzeFile(filePath));
   } catch (err) {
     return { ok: false, error: 'parse-failed', detail: String(err.message || err), path: '', analysis: null };
   }
@@ -367,7 +423,7 @@ ipcMain.handle('replay:pick', async () => {
   });
   if (picked.canceled || !picked.filePaths?.length) return { ok: false, error: 'cancelled', path: '', analysis: null };
   try {
-    return replay.analyzeFile(picked.filePaths[0]);
+    return enrichReplay(replay.analyzeFile(picked.filePaths[0]));
   } catch (err) {
     return { ok: false, error: 'parse-failed', detail: String(err.message || err), path: '', analysis: null };
   }
