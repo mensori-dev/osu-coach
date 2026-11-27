@@ -147,7 +147,8 @@ export default function App() {
   // «обложка» follows the live map, or the last one played when nothing is running.
   const accentCover = theme === 'cover' ? themeCover(boot, payload) : null;
   const coverAccent = useCoverAccent(accentCover);
-  const appStyle = themeStyle(theme) ?? (coverAccent ? accentStyle(coverAccent.a, coverAccent.b) : undefined);
+  const appStyle =
+    themeStyle(theme) ?? (coverAccent ? accentStyle(coverAccent.a, coverAccent.b, coverAccent.tint) : undefined);
 
   return (
     <div className={'app' + (maxed ? ' maxed' : '')} style={appStyle}>

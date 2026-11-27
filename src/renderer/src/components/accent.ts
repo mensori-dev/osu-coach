@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 export interface Accent {
   a: string;
   b: string;
+  /** A deep, slightly tinted background derived from the same cover. */
+  tint: string;
 }
 
 function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
@@ -50,9 +52,32 @@ function hslToHex(h: number, s: number, l: number): string {
   );
 }
 
+function rgbaStr(r: number, g: number, b: number, a: number): string {
+  return `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${a})`;
+}
+
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const hue = ((h % 360) + 360) % 360;
+  const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const m = l - c / 2;
+  let rgbv: [number, number, number];
+  if (hue < 60) rgbv = [c, x, 0];
+  else if (hue < 120) rgbv = [x, c, 0];
+  else if (hue < 180) rgbv = [0, c, x];
+  else if (hue < 240) rgbv = [0, x, c];
+  else if (hue < 300) rgbv = [x, 0, c];
+  else rgbv = [c, 0, x];
+  return rgbv.map((value) => (value + m) * 255) as [number, number, number];
+}
+
 /**
- * Pulls two readable accent colours out of the map cover.
- * The cover is fetched through the main process, so the canvas stays untainted.
+ * Pulls a small palette out of the map cover.
+ *
+ * Dark and washed-out covers used to give nothing and the whole app fell back
+ * to the same purple. Now the dominant hue is taken even from a dim cover, the
+ * accent is lifted so it stays readable, and a deep background tint is derived
+ * from the cover's average colour so the app feels like the artwork.
  */
 export function useCoverAccent(cover: string | null): Accent | null {
   const [picked, setPicked] = useState<{ cover: string; accent: Accent } | null>(null);
@@ -82,32 +107,62 @@ export function useCoverAccent(cover: string | null): Accent | null {
       ctx.drawImage(image, 0, 0, 32, 32);
       const pixels = ctx.getImageData(0, 0, 32, 32).data;
 
-      let r = 0;
-      let g = 0;
-      let b = 0;
+      const buckets = Array.from({ length: 36 }, () => 0);
+      let vivid = 0;
+      let ar = 0;
+      let ag = 0;
+      let ab = 0;
       let n = 0;
+
       for (let i = 0; i < pixels.length; i += 4) {
         const pr = pixels[i];
         const pg = pixels[i + 1];
         const pb = pixels[i + 2];
-        const max = Math.max(pr, pg, pb);
-        const min = Math.min(pr, pg, pb);
-        const sat = max === 0 ? 0 : (max - min) / max;
-        if (max < 46 || sat < 0.22) continue;
-        r += pr;
-        g += pg;
-        b += pb;
+        ar += pr;
+        ag += pg;
+        ab += pb;
         n += 1;
+
+        const [h, s, l] = rgbToHsl(pr, pg, pb);
+        if (l < 0.04 || l > 0.97) continue;
+        // Keep even dim colours, but the weight favours the vivid ones.
+        const weight = (0.25 + s) * (0.3 + l);
+        if (s < 0.06 && l < 0.25) continue;
+        buckets[Math.floor((((h % 360) + 360) % 360) / 10) % 36] += weight;
+        vivid += s * l;
       }
 
       if (!alive || !n) return;
-      const [h, s] = rgbToHsl(r / n, g / n, b / n);
-      const saturation = Math.max(0.55, Math.min(0.9, s));
+
+      const [avgH, avgS] = rgbToHsl(ar / n, ag / n, ab / n);
+
+      let hue = avgH;
+      let topWeight = 0;
+      let topBucket = -1;
+      for (let i = 0; i < buckets.length; i++) {
+        if (buckets[i] > topWeight) {
+          topWeight = buckets[i];
+          topBucket = i;
+        }
+      }
+      // A colourful cover picks its dominant hue; a flat/dark one keeps the
+      // average hue, so it still matches the artwork instead of going purple.
+      if (topBucket >= 0 && topWeight > 1.5 && avgS > 0.05) hue = topBucket * 10 + 5;
+
+      const saturation = Math.max(0.58, Math.min(0.92, Math.max(avgS, 0.5)));
+      const primaryHue = hue;
+      const secondaryHue = hue + 34;
+
+      const tintHue = topBucket >= 0 && topWeight > 1.5 ? hue : avgH;
+      const tintSat = Math.min(0.4, Math.max(avgS, 0.12));
+      const [tr, tg, tb] = hslToRgb(tintHue, tintSat, 0.1);
+
       setPicked({
         cover,
         accent: {
-          a: hslToHex(h, saturation, 0.63),
-          b: hslToHex(h + 38, Math.max(0.5, saturation - 0.08), 0.55),
+          a: hslToHex(primaryHue, saturation, 0.62),
+          b: hslToHex(secondaryHue, Math.max(0.5, saturation - 0.08), 0.54),
+          tint: rgbaStr(tr, tg, tb, 0.85),
         },
       });
     };

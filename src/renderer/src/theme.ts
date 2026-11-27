@@ -23,9 +23,9 @@ export function themeStyle(theme: Theme | undefined): CSSProperties | undefined 
   return { '--pink': found.pink, '--violet': found.violet } as CSSProperties;
 }
 
-/** Two accent colours pulled from a cover, applied app-wide. */
-export function accentStyle(a: string, b: string): CSSProperties {
-  return { '--pink': a, '--violet': b } as CSSProperties;
+/** Two accent colours pulled from a cover, plus a deep background tint. */
+export function accentStyle(a: string, b: string, tint?: string): CSSProperties {
+  return { '--pink': a, '--violet': b, ...(tint ? { '--cover-tint': tint } : {}) } as CSSProperties;
 }
 
 /**

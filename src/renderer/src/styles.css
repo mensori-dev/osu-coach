@@ -17,6 +17,7 @@
   --pink: #ff5fa2;
   --pink-soft: #ff9cc7;
   --violet: #9b6bff;
+  --cover-tint: transparent;
   --mint: #3ee6a4;
   --amber: #ffc35c;
   --red: #ff5f6d;
@@ -167,6 +168,7 @@ button {
   display: flex;
   flex-direction: column;
   background:
+    radial-gradient(150% 100% at 50% 0%, var(--cover-tint), transparent 72%),
     radial-gradient(120% 80% at 82% -12%, color-mix(in srgb, var(--violet) 20%, transparent), transparent 58%),
     radial-gradient(110% 80% at 0% 112%, color-mix(in srgb, var(--pink) 17%, transparent), transparent 60%), var(--bg);
   border-radius: 18px;
