@@ -69,7 +69,7 @@ export function ReplayCard() {
     <div className="card replay-card">
       <div className="replay-head">
         <div>
-          <div className="card-title">разбор реплея</div>
+          <div className="card-title">последний .osr</div>
           <div className="replay-sub">
             {a
               ? `${a.player} · ${data?.file ?? 'последний'} · ${secs(a.durationMs)}`

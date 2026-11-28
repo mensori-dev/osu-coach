@@ -6763,3 +6763,287 @@ button,
 .map-more {
   margin: 8px 2px 0;
 }
+
+/* ---------- animated accent (cover theme) ---------- */
+
+@property --pink {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #ff5fa2;
+}
+@property --pink-soft {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #ff9cc7;
+}
+@property --violet {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #9b6bff;
+}
+@property --cover-tint {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(0, 0, 0, 0);
+}
+
+/* Registered above, so switching maps fades the palette instead of snapping. */
+.app {
+  transition:
+    --pink 0.7s var(--ease-soft),
+    --pink-soft 0.7s var(--ease-soft),
+    --violet 0.7s var(--ease-soft),
+    --cover-tint 0.7s var(--ease-soft);
+}
+
+/* ---------- campaign finale ---------- */
+
+.finale {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.finale-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(60% 60% at 50% 18%, color-mix(in srgb, var(--pink) 18%, transparent), transparent 70%),
+    rgba(4, 3, 8, 0.86);
+  backdrop-filter: blur(16px) saturate(0.9);
+}
+
+.finale-box {
+  position: relative;
+  width: min(900px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 24px 28px 20px;
+  border-radius: 28px;
+  border: 1px solid color-mix(in srgb, var(--pink) 26%, var(--line));
+  background:
+    radial-gradient(90% 120% at 50% -20%, color-mix(in srgb, var(--pink) 16%, transparent), transparent 60%),
+    linear-gradient(180deg, rgba(26, 22, 36, 0.96), rgba(12, 10, 18, 0.98));
+  box-shadow:
+    0 40px 120px -40px rgba(0, 0, 0, 0.9),
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  overflow-x: hidden;
+}
+
+.finale-box::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(80% 50% at 50% 0%, color-mix(in srgb, var(--violet) 12%, transparent), transparent 70%);
+}
+
+.finale-top {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.finale-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pink-soft);
+}
+
+.finale-sub {
+  font-size: 12.4px;
+  color: var(--dim);
+}
+
+.finale-stage {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  min-height: 320px;
+  padding: 10px 0 4px;
+}
+
+.finale-row,
+.finale-result {
+  grid-area: 1 / 1;
+  width: 100%;
+}
+
+.finale-row {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.finale-card {
+  width: 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.finale-cover {
+  position: relative;
+  height: 96px;
+  border-radius: 14px;
+  background-size: cover;
+  background-position: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 14px 30px -14px rgba(0, 0, 0, 0.8);
+  overflow: hidden;
+}
+
+.finale-cover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 40%, rgba(6, 5, 10, 0.72) 100%);
+}
+
+.finale-check {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  z-index: 1;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 11px;
+  color: #0d0a12;
+  background: var(--mint);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--mint) 55%, transparent);
+}
+
+.finale-card-name {
+  font-size: 10.6px;
+  line-height: 1.3;
+  color: var(--muted);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finale-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.finale-count {
+  font-family: var(--font-display);
+  font-size: 68px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  text-shadow: 0 0 40px color-mix(in srgb, var(--pink) 45%, transparent);
+}
+
+.finale-count i {
+  font-style: normal;
+  margin: 0 4px;
+  color: var(--dim);
+  font-size: 44px;
+}
+
+.finale-label {
+  margin-top: 2px;
+  font-size: 11.6px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.finale-stats {
+  margin-top: 20px;
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.finale-stat {
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.035);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.finale-stat span {
+  font-size: 10.6px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.finale-stat b {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.finale-stat em {
+  font-style: normal;
+  font-size: 11.4px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finale-foot {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.finale-hint {
+  font-size: 11.8px;
+  color: var(--dim);
+}
+
+.run-finale-btn {
+  margin-top: 12px;
+}
+
+.bd-replay-section {
+  margin-top: 18px;
+}
+
+@media (max-width: 720px) {
+  .finale-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .finale-card {
+    width: 74px;
+  }
+  .finale-cover {
+    height: 74px;
+  }
+  .finale-count {
+    font-size: 54px;
+  }
+}

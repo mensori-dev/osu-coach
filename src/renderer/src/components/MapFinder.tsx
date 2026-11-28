@@ -522,7 +522,13 @@ export function MapFinder({ boot, onScan, liveMapId = 0 }: Props) {
       } else if (result.ok) {
         setNotice(`«${map.title}» лежит в загрузках, но osu! файл не подхватил. Открой его вручную.`);
       } else {
-        setNotice(`Скачать не вышло (${result.error || 'ошибка'}). Открываю страницу карты в браузере.`);
+        const why = result.error || 'ошибка';
+        const unranked = Boolean(map.status) && !['ranked', 'approved', 'qualified', 'loved'].includes(map.status);
+        setNotice(
+          unranked
+            ? `«${map.title}» нет ни в одном зеркале (${why}). Такие карты (${map.status === 'graveyard' ? 'graveyard' : 'не ранкед'}) архивы хранят не все. Открыл страницу osu! — скачать можно после входа в аккаунт.`
+            : `Скачать не вышло (${why}). Открываю страницу карты в браузере.`,
+        );
         void bridge.openExternal(`https://osu.ppy.sh/beatmapsets/${map.setId}`);
       }
     } catch (err) {

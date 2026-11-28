@@ -10,6 +10,7 @@ import { openInOsu } from '../openMap';
 interface Props {
   boot: Bootstrap;
   onOpenMaps: () => void;
+  onShowFinale?: () => void;
 }
 
 interface Goal {
@@ -147,7 +148,7 @@ function PlanRow({ map, reason, onOpen }: { map: MapEntry; reason: string; onOpe
   );
 }
 
-export function PlanView({ boot, onOpenMaps }: Props) {
+export function PlanView({ boot, onOpenMaps, onShowFinale }: Props) {
   const scan = boot.scan;
   const maps = useMemo(() => scan?.maps ?? [], [scan]);
   const comfort = scan?.comfortStar ?? 3.5;
@@ -214,7 +215,7 @@ export function PlanView({ boot, onOpenMaps }: Props) {
 
       {note && <div className="bd-open-note">{note}</div>}
 
-      {mode === 'run' && <Campaign boot={boot} onOpenMaps={onOpenMaps} />}
+      {mode === 'run' && <Campaign boot={boot} onOpenMaps={onOpenMaps} onShowFinale={onShowFinale} />}
 
       {mode === 'skills' && (
         <>

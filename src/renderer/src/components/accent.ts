@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 export interface Accent {
   a: string;
   b: string;
+  /** Lighter sibling of `a`, used for soft text and chips. */
+  soft: string;
   /** A deep, slightly tinted background derived from the same cover. */
   tint: string;
 }
@@ -134,35 +136,56 @@ export function useCoverAccent(cover: string | null): Accent | null {
 
       if (!alive || !n) return;
 
-      const [avgH, avgS] = rgbToHsl(ar / n, ag / n, ab / n);
+      const [avgH, avgS, avgL] = rgbToHsl(ar / n, ag / n, ab / n);
 
-      let hue = avgH;
-      let topWeight = 0;
       let topBucket = -1;
+      let topWeight = 0;
       for (let i = 0; i < buckets.length; i++) {
         if (buckets[i] > topWeight) {
           topWeight = buckets[i];
           topBucket = i;
         }
       }
+
       // A colourful cover picks its dominant hue; a flat/dark one keeps the
       // average hue, so it still matches the artwork instead of going purple.
-      if (topBucket >= 0 && topWeight > 1.5 && avgS > 0.05) hue = topBucket * 10 + 5;
+      const dominant = topBucket >= 0 && topWeight > 1.5 && avgS > 0.05;
+      const primaryHue = dominant ? topBucket * 10 + 5 : avgH;
 
-      const saturation = Math.max(0.58, Math.min(0.92, Math.max(avgS, 0.5)));
-      const primaryHue = hue;
-      const secondaryHue = hue + 34;
+      // The second colour sits at least 45° away on the wheel. Two neighbours
+      // read as a palette; two shades of one hue read as the default theme.
+      let secondBucket = -1;
+      let secondWeight = 0;
+      if (dominant) {
+        for (let i = 0; i < buckets.length; i++) {
+          if (i === topBucket) continue;
+          const distance = Math.min(Math.abs(i - topBucket), 36 - Math.abs(i - topBucket)) * 10;
+          if (distance < 45) continue;
+          if (buckets[i] > secondWeight) {
+            secondWeight = buckets[i];
+            secondBucket = i;
+          }
+        }
+      }
+      const hasSecond = secondBucket >= 0 && secondWeight > topWeight * 0.22;
+      const secondaryHue = hasSecond ? secondBucket * 10 + 5 : primaryHue + 38;
 
-      const tintHue = topBucket >= 0 && topWeight > 1.5 ? hue : avgH;
-      const tintSat = Math.min(0.4, Math.max(avgS, 0.12));
-      const [tr, tg, tb] = hslToRgb(tintHue, tintSat, 0.1);
+      // Keep the cover's own depth. A dark red cover stays red instead of being
+      // lifted into the same pink as every other cover.
+      const lightness = Math.max(0.52, Math.min(0.66, 0.56 + (avgL - 0.45) * 0.25));
+      const saturation = Math.max(0.5, Math.min(0.95, Math.max(avgS, 0.35) * 1.25 + 0.1));
+
+      const tintHue = dominant ? primaryHue : avgH;
+      const tintSat = Math.min(0.55, Math.max(0.18, avgS * 0.8));
+      const [tr, tg, tb] = hslToRgb(tintHue, tintSat, 0.13);
 
       setPicked({
         cover,
         accent: {
-          a: hslToHex(primaryHue, saturation, 0.62),
-          b: hslToHex(secondaryHue, Math.max(0.5, saturation - 0.08), 0.54),
-          tint: rgbaStr(tr, tg, tb, 0.85),
+          a: hslToHex(primaryHue, saturation, lightness),
+          b: hslToHex(secondaryHue, Math.max(0.55, saturation - 0.06), Math.max(0.46, lightness - 0.08)),
+          soft: hslToHex(primaryHue, Math.min(0.9, saturation), Math.min(0.8, lightness + 0.16)),
+          tint: rgbaStr(tr, tg, tb, 0.9),
         },
       });
     };

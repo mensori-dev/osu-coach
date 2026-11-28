@@ -1,6 +1,6 @@
 {
   "name": "osu-coach",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "description": "Live osu! coach: real-time play analysis, skill curve and training plan",
   "author": "mens0ri",

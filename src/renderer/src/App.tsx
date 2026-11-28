@@ -16,6 +16,7 @@ import { Greeting } from './components/Greeting';
 import { Tutorial } from './components/Tutorial';
 import { UpdateBar } from './components/UpdateBar';
 import { RecordToast } from './components/RecordToast';
+import { Finale } from './components/Finale';
 import { accentStyle, themeCover, themeStyle } from './theme';
 import { useCoverAccent } from './components/accent';
 
@@ -30,6 +31,8 @@ const MemoSettings = memo(SettingsView);
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('live');
+  // Which play the «разборы» tab should open on, set by «открыть разбор».
+  const [focusPlay, setFocusPlay] = useState<{ id: number; at: number } | null>(null);
   const [boot, setBoot] = useState<Bootstrap | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
   const [minElapsed, setMinElapsed] = useState(false);
@@ -79,7 +82,10 @@ export default function App() {
   }, []);
 
   const goMaps = useCallback(() => setTab('maps'), []);
-  const goPlays = useCallback(() => setTab('plays'), []);
+  const goPlays = useCallback((mapId?: number) => {
+    setFocusPlay(mapId ? { id: mapId, at: Date.now() } : null);
+    setTab('plays');
+  }, []);
   const setDemo = useCallback(
     (on: boolean) => {
       void patch({ demo: on });
@@ -122,6 +128,7 @@ export default function App() {
   // osu! flushes scores.db when it leaves the results screen, not the moment a
   // map ends. Keep the finished run in memory until the db catches up.
   const [fresh, setFresh] = useState<FreshPlay | null>(null);
+  const [finaleOpen, setFinaleOpen] = useState(false);
   const prevState = useRef<string | null>(null);
   const liveRef = useRef(live);
   useEffect(() => {
@@ -168,11 +175,34 @@ export default function App() {
   const demo = Boolean(boot?.settings.demo);
   const theme = boot?.settings.theme ?? 'cover';
 
-  // «обложка» follows the live map, or the last one played when nothing is running.
-  const accentCover = theme === 'cover' ? themeCover(boot, payload) : null;
+  // «обложка» follows the live map, then the run that just ended, then the last
+  // one in the database. The middle step keeps the artwork after results close.
+  const accentCover = theme === 'cover' ? themeCover(boot, payload, fresh) : null;
   const coverAccent = useCoverAccent(accentCover);
   const appStyle =
-    themeStyle(theme) ?? (coverAccent ? accentStyle(coverAccent.a, coverAccent.b, coverAccent.tint) : undefined);
+    themeStyle(theme) ??
+    (coverAccent ? accentStyle(coverAccent.a, coverAccent.b, coverAccent.tint, coverAccent.soft) : undefined);
+
+  const campaign = boot?.campaign ?? null;
+  const campaignDone = Boolean(
+    campaign && campaign.progress.total > 0 && campaign.progress.done === campaign.progress.total,
+  );
+  const finaleKey = campaign?.createdAt ?? 0;
+  const finaleSeen = boot?.settings.finaleSeen ?? 0;
+
+  // The finale shows itself once per run, shortly after the last stage lands,
+  // and never again on the next launch unless the run is rebuilt.
+  useEffect(() => {
+    if (!campaignDone || !finaleKey || finaleSeen === finaleKey) return;
+    const timer = window.setTimeout(() => setFinaleOpen(true), 1400);
+    return () => window.clearTimeout(timer);
+  }, [campaignDone, finaleKey, finaleSeen]);
+
+  const showFinale = useCallback(() => setFinaleOpen(true), []);
+  const closeFinale = useCallback(() => {
+    setFinaleOpen(false);
+    if (finaleKey && finaleSeen !== finaleKey) void patch({ finaleSeen: finaleKey });
+  }, [finaleKey, finaleSeen, patch]);
 
   return (
     <MotionConfig reducedMotion="user">
@@ -226,13 +256,17 @@ export default function App() {
 
               {tab === 'plays' &&
                 (boot ? (
-                  <MemoPlays boot={boot} fresh={fresh} onScan={rescan} />
+                  <MemoPlays boot={boot} fresh={fresh} focus={focusPlay} onScan={rescan} />
                 ) : (
                   <div className="empty">Читаю данные…</div>
                 ))}
 
               {tab === 'plan' &&
-                (boot ? <MemoPlan boot={boot} onOpenMaps={goMaps} /> : <div className="empty">Читаю данные…</div>)}
+                (boot ? (
+                  <MemoPlan boot={boot} onOpenMaps={goMaps} onShowFinale={showFinale} />
+                ) : (
+                  <div className="empty">Читаю данные…</div>
+                ))}
 
               {tab === 'dash' &&
                 (boot ? (
@@ -273,6 +307,10 @@ export default function App() {
         </AnimatePresence>
 
         <AnimatePresence>{tourOpen && boot && <Tutorial onTab={setTab} onClose={closeTour} />}</AnimatePresence>
+
+        <AnimatePresence>
+          {finaleOpen && campaign && <Finale campaign={campaign} onClose={closeFinale} />}
+        </AnimatePresence>
 
         <AnimatePresence>
           {!(boot && minElapsed) && (

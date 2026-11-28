@@ -64,6 +64,7 @@ const defaults = {
     hideArtists: [],
     hideMappers: [],
   },
+  finaleSeen: 0,
 };
 
 let settings = { ...defaults, ...readJson(settingsFile, {}) };
@@ -271,6 +272,32 @@ let lastLiveState = 'idle';
 let creditedRun = '';
 
 /**
+ * Push the finished run into the in-memory scan the moment the results screen
+ * appears. The db copy replaces it on the next rescan; until then this keeps the
+ * last-played map (and the cover theme built from it) from lagging by minutes.
+ */
+function rememberLivePlay(payload) {
+  if (!scan?.ok || !payload.beatmap || !payload.play) return;
+  const beatmap = payload.beatmap;
+  const entry = {
+    id: beatmap.id,
+    title: beatmap.title || '',
+    artist: beatmap.artist || '',
+    diff: beatmap.version || '',
+    mapper: beatmap.mapper || '',
+    stars: beatmap.stars ?? null,
+    acc: payload.play.accuracy,
+    mods: Array.isArray(payload.play.mods) ? payload.play.mods : [],
+    combo: payload.play.combo ?? 0,
+    miss: payload.play.hits?.miss ?? 0,
+    at: Date.now(),
+  };
+  const list = Array.isArray(scan.recent) ? scan.recent : [];
+  const same = (play) => play.id === entry.id && Math.abs(play.acc - entry.acc) < 0.01;
+  scan.recent = [entry, ...list.filter((play) => !same(play))].slice(0, 12);
+}
+
+/**
  * The results screen is the first moment we know the run is over, and osu! has
  * not written scores.db yet. Credit the stage right there so the track ticks
  * while the player is still looking at the score, then let the db confirm it.
@@ -284,6 +311,11 @@ function creditFromLive(payload) {
   const key = `${payload.beatmap.id}:${payload.play.accuracy}:${payload.play.hits?.miss ?? 0}`;
   if (key === creditedRun) return;
   creditedRun = key;
+
+  // scores.db lands seconds later, and the campaign may not even be the reason
+  // this map was played. Remember the run right now so the cover theme, the
+  // plays list and «last played» do not keep showing yesterday's map.
+  rememberLivePlay(payload);
 
   const state = campaignStore.load();
   if (!state) return;
@@ -666,21 +698,56 @@ ipcMain.handle('maps:quick', async (event, params) => {
   }
 });
 
+/**
+ * Two public mirrors instead of one. osu.direct has the bigger archive but is
+ * missing plenty of unranked sets (graveyard maps in particular) — for those it
+ * answers 503 even though it knows the map. nerinyan covers part of the rest.
+ * Whichever answers first with a real zip wins.
+ */
+const OSZ_MIRRORS = [
+  { name: 'osu.direct', url: (id) => `https://osu.direct/api/d/${id}`, timeout: 60_000 },
+  { name: 'nerinyan', url: (id) => `https://api.nerinyan.moe/d/${id}`, timeout: 20_000 },
+];
+
+async function fetchOsz(id) {
+  let last = '';
+  for (const mirror of OSZ_MIRRORS) {
+    try {
+      const res = await fetch(mirror.url(id), {
+        redirect: 'follow',
+        headers: { 'User-Agent': 'osu-coach' },
+        signal: AbortSignal.timeout(mirror.timeout),
+      });
+      if (!res.ok) {
+        last = `${mirror.name} ${res.status}`;
+        continue;
+      }
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.length < 10_000) {
+        last = `${mirror.name}: пустой файл`;
+        continue;
+      }
+      if (buf[0] !== 0x50 || buf[1] !== 0x4b) {
+        last = `${mirror.name}: не архив`;
+        continue;
+      }
+      return { buf, mirror: mirror.name, disposition: res.headers.get('content-disposition') || '' };
+    } catch (err) {
+      last = `${mirror.name}: ${String(err.message || err).slice(0, 60)}`;
+    }
+  }
+  return { error: last || 'зеркала не ответили' };
+}
+
 ipcMain.handle('maps:download', async (event, setId) => {
   const id = Number(setId);
   if (!Number.isInteger(id) || id <= 0) return { ok: false, error: 'bad beatmapset id' };
   try {
-    const res = await fetch(`https://osu.direct/api/d/${id}`, {
-      redirect: 'follow',
-      signal: AbortSignal.timeout(60_000),
-    });
-    if (!res.ok) return { ok: false, error: `зеркало ответило ${res.status}` };
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length < 10_000) return { ok: false, error: 'файл пустой' };
-    if (buf[0] !== 0x50 || buf[1] !== 0x4b) return { ok: false, error: 'зеркало прислало не архив' };
+    const got = await fetchOsz(id);
+    if (got.error) return { ok: false, error: got.error };
+    const buf = got.buf;
 
-    const disposition = res.headers.get('content-disposition') || '';
-    const match = /filename="?([^";]+)"?/i.exec(disposition);
+    const match = /filename="?([^";]+)"?/i.exec(got.disposition);
     const rawName = match ? match[1] : `${id}.osz`;
     const safeName = Array.from(rawName)
       .map((char) => (char.charCodeAt(0) < 32 || '<>:"/\\|?*'.includes(char) ? '_' : char))
@@ -691,7 +758,14 @@ ipcMain.handle('maps:download', async (event, setId) => {
 
     const imported = await importIntoOsu(file);
     installedCache = { at: 0, ids: [] };
-    return { ok: true, path: file, opened: imported.opened, method: imported.method, error: imported.error };
+    return {
+      ok: true,
+      path: file,
+      opened: imported.opened,
+      method: imported.method,
+      mirror: got.mirror,
+      error: imported.error,
+    };
   } catch (err) {
     return { ok: false, error: String(err.message || err) };
   }

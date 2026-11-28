@@ -311,6 +311,8 @@ export interface Settings {
   overlay: boolean;
   overlayPos: OverlayPos;
   mapFilters: MapFilters;
+  /** `createdAt` of the campaign whose finale has already been shown. */
+  finaleSeen?: number;
 }
 
 export interface MapSuggestion {
@@ -360,6 +362,7 @@ export interface DownloadResult {
   path?: string;
   opened?: boolean;
   method?: string;
+  mirror?: string;
   error?: string;
 }
 

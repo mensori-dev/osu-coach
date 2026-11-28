@@ -9,6 +9,7 @@ import { openInOsu } from '../openMap';
 interface Props {
   boot: Bootstrap;
   onOpenMaps: () => void;
+  onShowFinale?: () => void;
 }
 
 function dayKey(date: Date): string {
@@ -96,7 +97,7 @@ function verdictOf(campaign: CampaignState): Verdict | null {
   };
 }
 
-export function Campaign({ boot, onOpenMaps }: Props) {
+export function Campaign({ boot, onOpenMaps, onShowFinale }: Props) {
   const scan = boot.scan;
   const [local, setLocal] = useState<CampaignState | null>(null);
   const [clearedAt, setClearedAt] = useState(0);
@@ -292,6 +293,11 @@ export function Campaign({ boot, onOpenMaps }: Props) {
             Улучшил {verdict.improved} из {verdict.total} карт. Считаю первую и лучшую попытку на каждой — поэтому часть
             прибавки это разогрев, а не новый скилл. Настоящий рост покажет только карта, которую ты ещё не играл.
           </p>
+          {onShowFinale && (
+            <button className="btn primary run-finale-btn" onClick={onShowFinale}>
+              <IconSpark size={14} /> показать финал
+            </button>
+          )}
         </div>
       )}
 

@@ -24,19 +24,36 @@ export function themeStyle(theme: Theme | undefined): CSSProperties | undefined 
 }
 
 /** Two accent colours pulled from a cover, plus a deep background tint. */
-export function accentStyle(a: string, b: string, tint?: string): CSSProperties {
-  return { '--pink': a, '--violet': b, ...(tint ? { '--cover-tint': tint } : {}) } as CSSProperties;
+export function accentStyle(a: string, b: string, tint?: string, soft?: string): CSSProperties {
+  return {
+    '--pink': a,
+    '--violet': b,
+    ...(soft ? { '--pink-soft': soft } : {}),
+    ...(tint ? { '--cover-tint': tint } : {}),
+  } as CSSProperties;
+}
+
+function coverOf(setId: number | null | undefined): string | null {
+  if (!setId) return null;
+  return `https://assets.ppy.sh/beatmaps/${setId}/covers/cover.jpg`;
 }
 
 /**
  * Which cover should drive the accent when the theme is «обложка»: the map that
- * is playing right now if there is one, otherwise the last one played.
+ * is playing right now, then the run that just ended, then the last map in the
+ * database. The middle step matters: osu! writes scores.db seconds later, so
+ * without it the theme snaps back to yesterday's artwork the moment results close.
  */
-export function themeCover(boot: Bootstrap | null, live: LivePayload | null): string | null {
+export function themeCover(
+  boot: Bootstrap | null,
+  live: LivePayload | null,
+  fresh?: { setId: number } | null,
+): string | null {
   if (live?.cover) return live.cover;
+  const freshCover = coverOf(fresh?.setId);
+  if (freshCover) return freshCover;
   const recent = boot?.scan?.recent?.[0];
   if (!recent) return null;
   const entry = boot?.scan?.maps?.find((map) => map.id === recent.id);
-  if (!entry) return null;
-  return `https://assets.ppy.sh/beatmaps/${entry.setId}/covers/cover.jpg`;
+  return coverOf(entry?.setId);
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Bootstrap, FreshPlay, ScanBucket, ScanPlay } from '../types';
 import { accTone, fmtNum, fmtTime, plural } from '../utils';
 import { IconArrowRight, IconSpark, IconStar, IconTarget } from './Icons';
@@ -9,6 +9,8 @@ import { openInOsu } from '../openMap';
 interface Props {
   boot: Bootstrap;
   fresh: FreshPlay | null;
+  /** Set by «открыть разбор» on the results screen: which play to show. */
+  focus?: { id: number; at: number } | null;
   onScan: () => void;
 }
 
@@ -150,11 +152,12 @@ function nextSteps(play: ScanPlay, expected: number | null): string[] {
   ];
 }
 
-export function PlaysView({ boot, fresh, onScan }: Props) {
+export function PlaysView({ boot, fresh, focus, onScan }: Props) {
   const scan = boot.scan;
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [picked, setPicked] = useState<{ id: number; at: number } | null>(null);
   const [mapNote, setMapNote] = useState('');
   const [opening, setOpening] = useState(false);
+  const detailRef = useRef<HTMLDivElement>(null);
 
   // A run that osu! has not written to scores.db yet. Once the db has it,
   // the db copy wins and the in-memory one is dropped.
@@ -173,8 +176,10 @@ export function PlaysView({ boot, fresh, onScan }: Props) {
 
   const selected = useMemo(() => {
     if (!recent.length) return null;
+    // A row click wins until a newer «открыть разбор» arrives with its own id.
+    const selectedId = focus && (!picked || picked.at < focus.at) ? focus.id : (picked?.id ?? null);
     return recent.find((play) => play.id === selectedId) ?? recent[0];
-  }, [recent, selectedId]);
+  }, [recent, focus, picked]);
 
   const meta = useMemo(() => {
     if (!selected) return undefined;
@@ -192,6 +197,18 @@ export function PlaysView({ boot, fresh, onScan }: Props) {
     }
     return undefined;
   }, [byId, selected, showFresh, fresh]);
+
+  // «Открыть разбор» from the results screen should land on that run, not on
+  // whatever happened to be selected last. Selection itself is derived above;
+  // this only brings the card into view.
+  useEffect(() => {
+    if (!focus) return;
+    const timer = window.setTimeout(
+      () => detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }),
+      160,
+    );
+    return () => window.clearTimeout(timer);
+  }, [focus]);
 
   if (!scan?.ok) {
     return (
@@ -237,8 +254,6 @@ export function PlaysView({ boot, fresh, onScan }: Props) {
         </div>
       </div>
 
-      <ReplayCard />
-
       <div className="bd-grid">
         <div className="card bd-list">
           {recent.map((play) => (
@@ -246,7 +261,7 @@ export function PlaysView({ boot, fresh, onScan }: Props) {
               key={`${play.id}-${play.at}`}
               className={'bd-row tone-' + accTone(play.acc) + (selected?.at === play.at ? ' on' : '')}
               onClick={() => {
-                setSelectedId(play.id);
+                setPicked({ id: play.id, at: Date.now() });
                 setMapNote('');
               }}
             >
@@ -270,7 +285,7 @@ export function PlaysView({ boot, fresh, onScan }: Props) {
         </div>
 
         {selected && verdict && (
-          <div className="card bd-detail">
+          <div className="card bd-detail" ref={detailRef}>
             <div className="bd-detail-top">
               <div className="bd-title-wrap">
                 <div className="bd-title">{selected.title}</div>
@@ -384,6 +399,17 @@ export function PlaysView({ boot, fresh, onScan }: Props) {
           </div>
         )}
       </div>
+
+      <section className="bd-replay-section">
+        <div className="section-title">
+          <IconStar size={13} /> файл реплея .osr
+        </div>
+        <p className="section-note">
+          Это отдельный разбор по файлу из папки Replays: тапы, стримы и аим. Выше — разбор твоей игры по цифрам, и это
+          разные вещи.
+        </p>
+        <ReplayCard />
+      </section>
     </div>
   );
 }

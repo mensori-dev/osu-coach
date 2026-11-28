@@ -17,7 +17,7 @@ interface Props {
   boot?: Bootstrap | null;
   accent?: boolean;
   onDemo: (on: boolean) => void;
-  onOpenPlays?: () => void;
+  onOpenPlays?: (mapId?: number) => void;
   onTab?: (tab: Tab) => void;
 }
 
@@ -487,7 +487,7 @@ function ResultsScreen({
 }: {
   live: LivePayload;
   accent: boolean;
-  onOpenPlays?: () => void;
+  onOpenPlays?: (mapId?: number) => void;
 }) {
   const map = live.beatmap!;
   const play = live.play!;
@@ -549,7 +549,7 @@ function ResultsScreen({
           </div>
 
           <div className="results-actions">
-            <button className="btn primary" onClick={onOpenPlays}>
+            <button className="btn primary" onClick={() => onOpenPlays?.(map.id)}>
               <IconSpark size={14} /> открыть разбор
             </button>
             <PreviewButton setId={map.setId} size={12} label="послушать трек" />
