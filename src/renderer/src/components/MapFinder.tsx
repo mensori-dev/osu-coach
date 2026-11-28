@@ -1,8 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { Bootstrap, MapEntry, MapSearchResult, MapSuggestion } from '../types';
+import type { Bootstrap, MapEntry, MapFilters, MapSearchResult, MapSuggestion } from '../types';
 import { bridge, useNow } from '../hooks';
 import { fmtInt, fmtNum, fmtTime, plural } from '../utils';
-import { IconArrowRight, IconDownload, IconExternal, IconRefresh, IconSearch, IconSpark, IconStar } from './Icons';
+import {
+  IconArrowRight,
+  IconClose,
+  IconDownload,
+  IconExternal,
+  IconGear,
+  IconRefresh,
+  IconSearch,
+  IconSpark,
+  IconStar,
+} from './Icons';
 import { PreviewButton } from './Preview';
 import { openInOsu } from '../openMap';
 
@@ -41,6 +51,55 @@ function daysAgo(at: number, now: number): string {
   if (days < 7) return `${days} дн. назад`;
   if (days < 30) return `${Math.floor(days / 7)} нед. назад`;
   return `${Math.floor(days / 30)} мес. назад`;
+}
+
+// osu! genre and language ids, straight from the beatmapset payload.
+const GENRE_CHIPS = [
+  { id: 7, label: 'электроника' },
+  { id: 5, label: 'рок' },
+  { id: 4, label: 'поп' },
+  { id: 6, label: 'хип-хоп' },
+  { id: 8, label: 'метал' },
+  { id: 9, label: 'классика' },
+  { id: 10, label: 'фолк' },
+  { id: 11, label: 'джаз' },
+  { id: 3, label: 'аниме' },
+  { id: 2, label: 'игровая' },
+  { id: 12, label: 'новинки' },
+];
+
+const LANGUAGE_CHIPS = [
+  { id: 5, label: 'инструментал' },
+  { id: 2, label: 'английский' },
+  { id: 12, label: 'русский' },
+  { id: 3, label: 'японский' },
+];
+
+const STAR_MODES = [
+  { id: 'comfort', label: 'мой уровень' },
+  { id: 'hard', label: 'чуть выше' },
+  { id: 'wide', label: 'пошире' },
+] as const;
+
+type StarMode = (typeof STAR_MODES)[number]['id'];
+
+const EMPTY_FILTERS: MapFilters = {
+  genres: [],
+  languages: [],
+  rankedOnly: false,
+  hideArtists: [],
+  hideMappers: [],
+};
+
+function statusChip(status: string): { text: string; tone: string } | null {
+  const value = String(status || '').toLowerCase();
+  if (value === 'ranked' || value === 'approved') return { text: 'ранкед', tone: 'ok' };
+  if (value === 'qualified') return { text: 'квалифай', tone: 'mid' };
+  if (value === 'loved') return { text: 'лавд', tone: 'loved' };
+  if (value === 'pending') return { text: 'на модерации', tone: 'dim' };
+  if (value === 'wip') return { text: 'в работе', tone: 'dim' };
+  if (!value) return null;
+  return { text: 'не ранкед', tone: 'dim' };
 }
 
 function MapRow({
@@ -99,6 +158,9 @@ function OnlineRow({
   installed,
   onDownload,
   onOpen,
+  onHide,
+  hideOpen,
+  onHideToggle,
 }: {
   map: MapSuggestion;
   downloading: boolean;
@@ -106,7 +168,11 @@ function OnlineRow({
   installed: boolean;
   onDownload: () => void;
   onOpen: () => void;
+  onHide?: (kind: 'artist' | 'mapper') => void;
+  hideOpen?: boolean;
+  onHideToggle?: () => void;
 }) {
+  const status = statusChip(map.status);
   return (
     <div className="online-row">
       <div className="online-cover">
@@ -123,6 +189,7 @@ function OnlineRow({
         </div>
         <div className="map-chips">
           <span className="map-chip online-chip">{downloaded ? 'скачана' : installed ? 'уже в osu!' : 'не играл'}</span>
+          {status && <span className={'map-chip map-status ' + status.tone}>{status.text}</span>}
           {map.why?.slice(0, 2).map((reason) => (
             <span className="map-chip" key={reason}>
               {reason}
@@ -150,6 +217,28 @@ function OnlineRow({
             <IconDownload size={14} /> {downloading ? 'качаю…' : 'скачать'}
           </button>
         )}
+        {onHide && (
+          <div className="map-hide-wrap">
+            <button
+              className="map-hide"
+              title="больше не предлагать"
+              aria-label="больше не предлагать"
+              onClick={onHideToggle}
+            >
+              <IconClose size={11} />
+            </button>
+            {hideOpen && (
+              <div className="map-hide-menu">
+                <button onClick={() => onHide('artist')}>
+                  скрыть артиста <span>{map.artist}</span>
+                </button>
+                <button onClick={() => onHide('mapper')}>
+                  скрыть маппера <span>{map.mapper}</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
         <button
           className="map-open"
           title="Открыть страницу карты"
@@ -176,8 +265,19 @@ export function MapFinder({ boot, onScan, liveMapId = 0 }: Props) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<MapSearchResult | null>(null);
   const [searching, setSearching] = useState(false);
+  const [rankedOnly, setRankedOnly] = useState(false);
+  const [searchMore, setSearchMore] = useState(false);
+  const [filters, setFilters] = useState<MapFilters>(() => ({ ...EMPTY_FILTERS, ...boot.settings.mapFilters }));
+  const [showFilters, setShowFilters] = useState(false);
+  const [starMode, setStarMode] = useState<StarMode>('comfort');
+  const [hideFor, setHideFor] = useState(0);
   const now = useNow(60_000);
   const maps = useMemo(() => scan?.maps ?? [], [scan]);
+
+  // Filters are a player preference, not a per-session whim: remember them.
+  useEffect(() => {
+    bridge.setSettings({ mapFilters: filters }).catch(() => {});
+  }, [filters]);
 
   const refreshInstalled = useCallback(() => {
     bridge
@@ -224,8 +324,9 @@ export function MapFinder({ boot, onScan, liveMapId = 0 }: Props) {
       bridge
         .quickSearch({
           text: searchValue,
-          limit: 20,
+          limit: 50,
           target: Math.round((comfort + 0.35) * 10) / 10,
+          rankedOnly,
         })
         .then((value) => {
           if (alive) setResults(value);
@@ -241,14 +342,14 @@ export function MapFinder({ boot, onScan, liveMapId = 0 }: Props) {
       alive = false;
       window.clearTimeout(id);
     };
-  }, [searchValue, searchingNow, comfort]);
+  }, [searchValue, searchingNow, comfort, rankedOnly]);
 
   const localHits = useMemo(() => {
     if (!searchingNow) return [];
     const needle = searchValue.toLowerCase();
     return maps
       .filter((map) => `${map.title} ${map.artist} ${map.mapper} ${map.diff}`.toLowerCase().includes(needle))
-      .slice(0, 6);
+      .slice(0, 12);
   }, [maps, searchValue, searchingNow]);
 
   const tasteLine = useMemo(() => {
@@ -262,9 +363,11 @@ export function MapFinder({ boot, onScan, liveMapId = 0 }: Props) {
 
   const onlineParams = useMemo(() => {
     const bpm = scan?.preferences?.bpm;
+    const span =
+      starMode === 'hard' ? { lo: 0.25, hi: 1.6 } : starMode === 'wide' ? { lo: -0.7, hi: 1.9 } : { lo: -0.1, hi: 1.1 };
     return {
-      minStars: Math.max(1, Math.round((comfort - 0.1) * 10) / 10),
-      maxStars: Math.round((comfort + 1.1) * 10) / 10,
+      minStars: Math.max(1, Math.round((comfort + span.lo) * 10) / 10),
+      maxStars: Math.round((comfort + span.hi) * 10) / 10,
       bpmMin: Math.max(60, Math.round((bpm?.p25 ?? 120) - 10)),
       bpmMax: Math.min(320, Math.round((bpm?.p75 ?? 200) + 10)),
       target: Math.round((comfort + 0.35) * 10) / 10,
@@ -274,8 +377,9 @@ export function MapFinder({ boot, onScan, liveMapId = 0 }: Props) {
         .filter(Boolean),
       limit: 12,
       cursor,
+      filters,
     };
-  }, [comfort, maps, scan?.preferences?.bpm, cursor]);
+  }, [comfort, maps, scan?.preferences?.bpm, cursor, starMode, filters]);
 
   const loadOnline = useCallback(
     async (force = false) => {
@@ -334,6 +438,77 @@ export function MapFinder({ boot, onScan, liveMapId = 0 }: Props) {
         })),
     [maps, now],
   );
+
+  const activeFilters =
+    filters.genres.length +
+    filters.languages.length +
+    (filters.rankedOnly ? 1 : 0) +
+    filters.hideArtists.length +
+    filters.hideMappers.length;
+
+  function patchFilters(update: (prev: MapFilters) => MapFilters) {
+    setFilters(update);
+    setCursor('');
+    setCursorDepth(0);
+    setHideFor(0);
+  }
+
+  function chooseStarMode(mode: StarMode) {
+    setStarMode(mode);
+    setCursor('');
+    setCursorDepth(0);
+    setHideFor(0);
+  }
+
+  function toggleId(kind: 'genres' | 'languages', id: number) {
+    patchFilters((prev) => ({
+      ...prev,
+      [kind]: prev[kind].includes(id) ? prev[kind].filter((item) => item !== id) : [...prev[kind], id],
+    }));
+  }
+
+  function hideValue(kind: 'hideArtists' | 'hideMappers', value: string) {
+    const clean = String(value || '').trim();
+    if (!clean) return;
+    patchFilters((prev) => ({
+      ...prev,
+      [kind]: prev[kind].some((item) => item.toLowerCase() === clean.toLowerCase())
+        ? prev[kind]
+        : [...prev[kind], clean],
+    }));
+  }
+
+  function unhide(kind: 'hideArtists' | 'hideMappers', value: string) {
+    patchFilters((prev) => ({ ...prev, [kind]: prev[kind].filter((item) => item !== value) }));
+  }
+
+  async function moreSearch() {
+    if (!results?.next || searchMore) return;
+    setSearchMore(true);
+    try {
+      const value = await bridge.quickSearch({
+        text: searchValue,
+        limit: 50,
+        target: Math.round((comfort + 0.35) * 10) / 10,
+        cursor: results.next,
+        rankedOnly,
+      });
+      setResults((prev) => {
+        if (!prev) return value;
+        const known = new Set(prev.maps.map((map) => map.setId));
+        return {
+          ...prev,
+          maps: [...prev.maps, ...value.maps.filter((map) => !known.has(map.setId))],
+          next: value.next ?? null,
+          total: value.total || prev.total,
+        };
+      });
+    } catch {
+      // keep what is already on screen
+    } finally {
+      setSearchMore(false);
+    }
+  }
 
   async function download(map: MapSuggestion) {
     setDownloadId(map.setId);
@@ -446,7 +621,19 @@ export function MapFinder({ boot, onScan, liveMapId = 0 }: Props) {
         <section className="map-section search-section">
           <div className="section-title">
             <IconSearch size={14} /> поиск · «{searchValue}»
+            <button
+              className={'section-action' + (rankedOnly ? ' active' : '')}
+              onClick={() => setRankedOnly((value) => !value)}
+            >
+              {rankedOnly ? 'только ранкед' : 'все статусы'}
+            </button>
           </div>
+          {results?.ok && (
+            <p className="online-why">
+              в osu! {fmtInt(results.total)} {plural(results.total, 'карта', 'карты', 'карт')} · показано{' '}
+              {results.maps.length}
+            </p>
+          )}
           {localHits.length > 0 && (
             <div className="card map-list">
               {localHits.map((map) => (
@@ -495,6 +682,11 @@ export function MapFinder({ boot, onScan, liveMapId = 0 }: Props) {
               </div>
             )}
           </div>
+          {results?.ok && results.next && (
+            <button className="btn ghost map-more" onClick={() => void moreSearch()} disabled={searchMore}>
+              {searchMore ? 'тяну…' : 'показать ещё'}
+            </button>
+          )}
         </section>
       )}
 
@@ -523,6 +715,12 @@ export function MapFinder({ boot, onScan, liveMapId = 0 }: Props) {
         <div className="section-title">
           <IconSpark size={13} /> новое из osu! · под твой вкус
           <button
+            className={'section-action' + (activeFilters ? ' active' : '')}
+            onClick={() => setShowFilters((value) => !value)}
+          >
+            <IconGear size={12} /> фильтры{activeFilters ? ` · ${activeFilters}` : ''}
+          </button>
+          <button
             className="section-action"
             onClick={() => {
               if (online?.next) {
@@ -543,6 +741,97 @@ export function MapFinder({ boot, onScan, liveMapId = 0 }: Props) {
           </button>
         </div>
         {tasteLine && <p className="online-why">учитываю: {tasteLine}, темп и длину</p>}
+        {showFilters && (
+          <div className="card map-filters">
+            <div className="filter-group">
+              <span className="filter-label">жанр</span>
+              <div className="filter-chips">
+                {GENRE_CHIPS.map((genre) => (
+                  <button
+                    key={genre.id}
+                    className={'filter-chip' + (filters.genres.includes(genre.id) ? ' on' : '')}
+                    onClick={() => toggleId('genres', genre.id)}
+                  >
+                    {genre.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="filter-group">
+              <span className="filter-label">язык</span>
+              <div className="filter-chips">
+                {LANGUAGE_CHIPS.map((language) => (
+                  <button
+                    key={language.id}
+                    className={'filter-chip' + (filters.languages.includes(language.id) ? ' on' : '')}
+                    onClick={() => toggleId('languages', language.id)}
+                  >
+                    {language.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="filter-group">
+              <span className="filter-label">сложность</span>
+              <div className="filter-chips">
+                {STAR_MODES.map((mode) => (
+                  <button
+                    key={mode.id}
+                    className={'filter-chip' + (starMode === mode.id ? ' on' : '')}
+                    onClick={() => chooseStarMode(mode.id)}
+                  >
+                    {mode.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="filter-group">
+              <span className="filter-label">ещё</span>
+              <div className="filter-chips">
+                <button
+                  className={'filter-chip' + (filters.rankedOnly ? ' on' : '')}
+                  onClick={() => patchFilters((prev) => ({ ...prev, rankedOnly: !prev.rankedOnly }))}
+                >
+                  только ранкед
+                </button>
+                <button className="filter-chip" onClick={() => patchFilters(() => ({ ...EMPTY_FILTERS }))}>
+                  сбросить
+                </button>
+              </div>
+            </div>
+            {(filters.hideArtists.length > 0 || filters.hideMappers.length > 0) && (
+              <div className="filter-group">
+                <span className="filter-label">скрыто</span>
+                <div className="filter-chips">
+                  {filters.hideArtists.map((artist) => (
+                    <button
+                      key={'a' + artist}
+                      className="filter-chip on"
+                      title="вернуть в подборку"
+                      onClick={() => unhide('hideArtists', artist)}
+                    >
+                      {artist} ×
+                    </button>
+                  ))}
+                  {filters.hideMappers.map((mapper) => (
+                    <button
+                      key={'m' + mapper}
+                      className="filter-chip on"
+                      title="вернуть в подборку"
+                      onClick={() => unhide('hideMappers', mapper)}
+                    >
+                      {mapper} ×
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <p className="note filter-note">
+              пусто — значит любой. Жанр и язык берутся из метаданных карты, а не из названия. Крестик на карте скрывает
+              артиста или маппера из подборки.
+            </p>
+          </div>
+        )}
         <div className="card map-list online-list">
           {onlineLoading && !online?.maps.length ? (
             <div className="online-skeleton">
@@ -560,6 +849,14 @@ export function MapFinder({ boot, onScan, liveMapId = 0 }: Props) {
                 installed={installed.has(map.setId)}
                 onDownload={() => download(map)}
                 onOpen={() => void open(map)}
+                onHide={(kind) =>
+                  hideValue(
+                    kind === 'artist' ? 'hideArtists' : 'hideMappers',
+                    kind === 'artist' ? map.artist : map.mapper,
+                  )
+                }
+                hideOpen={hideFor === map.setId}
+                onHideToggle={() => setHideFor((value) => (value === map.setId ? 0 : map.setId))}
               />
             ))
           ) : onlineError ? (
@@ -622,6 +919,14 @@ export function MapFinder({ boot, onScan, liveMapId = 0 }: Props) {
                   installed={installed.has(map.setId)}
                   onDownload={() => download(map)}
                   onOpen={() => void open(map)}
+                  onHide={(kind) =>
+                    hideValue(
+                      kind === 'artist' ? 'hideArtists' : 'hideMappers',
+                      kind === 'artist' ? map.artist : map.mapper,
+                    )
+                  }
+                  hideOpen={hideFor === map.setId}
+                  onHideToggle={() => setHideFor((value) => (value === map.setId ? 0 : map.setId))}
                 />
               ))}
             </div>

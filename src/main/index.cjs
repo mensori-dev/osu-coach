@@ -19,6 +19,7 @@ const {
   build: buildCampaign,
   sync: syncCampaign,
   credit: creditCampaign,
+  retarget: retargetCampaign,
   view: viewCampaign,
 } = require('./campaign.cjs');
 
@@ -56,6 +57,13 @@ const defaults = {
   theme: 'cover',
   overlay: false,
   overlayPos: 'tl',
+  mapFilters: {
+    genres: [],
+    languages: [],
+    rankedOnly: false,
+    hideArtists: [],
+    hideMappers: [],
+  },
 };
 
 let settings = { ...defaults, ...readJson(settingsFile, {}) };
@@ -220,6 +228,9 @@ function rescan() {
 function syncCampaignState() {
   const state = campaignStore.load();
   if (!state || !scan?.ok) return;
+  // Rules changed since the campaign was built: recalculate the criteria from
+  // the fresh scan, keep the maps and the progress, re-judge old attempts.
+  if (retargetCampaign(state, scan)) campaignStore.save(state);
   const result = syncCampaign(state, scan);
   if (result.changed) campaignStore.save(state);
   if (result.records.length) {
@@ -630,7 +641,12 @@ ipcMain.handle('maps:installed', () => installedSetIds());
 
 ipcMain.handle('maps:search', async (event, params) => {
   try {
-    return await api.searchMaps({ ...params, preferences: scan?.preferences || null, music: settings.music || '' });
+    return await api.searchMaps({
+      ...params,
+      filters: params?.filters ?? settings.mapFilters ?? null,
+      preferences: scan?.preferences || null,
+      music: settings.music || '',
+    });
   } catch (err) {
     return { ok: false, error: String(err.message || err), total: 0, maps: [], next: null };
   }
@@ -639,12 +655,14 @@ ipcMain.handle('maps:search', async (event, params) => {
 ipcMain.handle('maps:quick', async (event, params) => {
   try {
     return await api.quickSearch(params?.text, {
-      limit: Math.max(1, Math.min(30, Number(params?.limit) || 20)),
+      limit: Math.max(1, Math.min(50, Number(params?.limit) || 20)),
       target: Number(params?.target) || 0,
       excludeSetIds: Array.isArray(params?.excludeSetIds) ? params.excludeSetIds : [],
+      cursor: String(params?.cursor || ''),
+      rankedOnly: Boolean(params?.rankedOnly),
     });
   } catch (err) {
-    return { ok: false, error: String(err.message || err), total: 0, maps: [] };
+    return { ok: false, error: String(err.message || err), total: 0, maps: [], next: null };
   }
 });
 

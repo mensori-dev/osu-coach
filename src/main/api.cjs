@@ -74,6 +74,41 @@ const ANIME_TAGS =
 // From the osu! API: English=2, Japanese=3, Russian=12.
 const LANG_ID = { russian: 12, english: 2, japanese: 3 };
 
+/**
+ * The osu! search endpoint only understands `status=`, star/bpm ranges, artist,
+ * creator and plain text. `genre=` and `language=` are parsed as ordinary
+ * words, so «genre=metal» finds a track called Metal Pipe. Real genre and
+ * language filtering has to happen on our side, using the ids every beatmapset
+ * already carries.
+ */
+function normalizeFilters(filters) {
+  const ids = (value, max) =>
+    Array.isArray(value)
+      ? value
+          .map((item) => Number(item))
+          .filter((item) => Number.isFinite(item) && item > 0)
+          .slice(0, max)
+      : [];
+  const names = (value) =>
+    Array.isArray(value)
+      ? value
+          .map((item) =>
+            String(item || '')
+              .trim()
+              .toLowerCase(),
+          )
+          .filter(Boolean)
+          .slice(0, 60)
+      : [];
+  return {
+    genres: ids(filters?.genres, 12),
+    languages: ids(filters?.languages, 12),
+    rankedOnly: Boolean(filters?.rankedOnly),
+    hideArtists: names(filters?.hideArtists),
+    hideMappers: names(filters?.hideMappers),
+  };
+}
+
 function hasCjk(name) {
   return /[\u3040-\u30ff\u3400-\u9fff\uff66-\uff9f]/.test(name);
 }
@@ -266,12 +301,25 @@ class OsuApi {
     force = false,
     preferences = null,
     music = '',
+    filters = null,
   } = {}) {
     if (!this.configured()) {
       return { ok: false, error: 'no credentials', total: 0, maps: [], next: null };
     }
 
+    const wanted = normalizeFilters(filters);
+    const hideArtists = new Set(wanted.hideArtists);
+    const hideMappers = new Set(wanted.hideMappers);
+    // Genre, language and ranked-only are handled by the osu! search endpoint
+    // itself. Only the hide lists need filtering on our side.
+    const needsFiltering = hideArtists.size > 0 || hideMappers.size > 0;
+
     const taste = buildTaste(music, preferences);
+    // An explicit anime/japanese choice overrides the «not your genre» guard.
+    const explicitAnime = wanted.genres.includes(3) || wanted.languages.includes(3);
+    const avoidJapanese = taste.avoidJapanese && !explicitAnime;
+    const scoringTaste = avoidJapanese === taste.avoidJapanese ? taste : { ...taste, avoidJapanese };
+
     const creators = (preferences?.creators || []).slice(0, 2);
     const artists = (preferences?.artists || []).slice(0, 2);
     const prefKey = [
@@ -291,38 +339,56 @@ class OsuApi {
       excludeSetIds.length,
       cursor,
       prefKey,
+      wanted.genres,
+      wanted.languages,
+      wanted.rankedOnly,
+      wanted.hideArtists,
+      wanted.hideMappers,
     ]);
     const cached = this.searchCache.get(key);
     if (!force && cached && Date.now() - cached.at < 5 * 60 * 1000) return cached.value;
 
-    const range = `stars>=${minStars} stars<=${maxStars} bpm>=${bpmMin} bpm<=${bpmMax}`;
-    const queries = [range];
+    const range = `stars>=${minStars} stars<=${maxStars} bpm>=${bpmMin} bpm<=${bpmMax}${
+      wanted.rankedOnly ? ' status=ranked' : ''
+    }`;
+
+    // Genre and language *are* real filters in the osu! search endpoint, but as
+    // the `g=` and `l=` query params — not as `genre=`/`language=` words inside
+    // `q=` (those are read as plain text). One request per combination.
+    const combos = [];
+    if (wanted.genres.length && wanted.languages.length) {
+      for (const genre of wanted.genres.slice(0, 3)) {
+        for (const language of wanted.languages.slice(0, 3)) combos.push({ g: genre, l: language });
+      }
+    } else if (wanted.genres.length) {
+      for (const genre of wanted.genres) combos.push({ g: genre });
+    } else if (wanted.languages.length) {
+      for (const language of wanted.languages) combos.push({ l: language });
+    }
+
+    const queries = combos.length
+      ? combos.slice(0, 6).map((combo) => ({ query: range, ...combo }))
+      : [{ query: range }];
 
     // First page: also look directly at favourite mappers and artists,
     // so the list is about the player's taste, not just the global rating.
-    if (!cursor) {
+    if (!cursor && !combos.length) {
       for (const item of creators) {
         const name = String(item.name || '').replace(/"/g, '');
-        if (name) queries.push(`creator="${name}" ${range}`);
+        if (name) queries.push({ query: `creator="${name}" ${range}` });
       }
       for (const item of artists) {
         const name = String(item.name || '').replace(/"/g, '');
-        if (name) queries.push(`artist="${name}" ${range}`);
+        if (name) queries.push({ query: `artist="${name}" ${range}` });
       }
-      // Pull real pools in the languages and genres the player asked for,
-      // instead of relying on the anime-heavy global rating.
-      for (const lang of taste.languages) queries.push(`language=${lang} ${range}`);
-      for (const genre of taste.genres) queries.push(`genre=${genre} ${range}`);
     }
 
-    const cursorPart = cursor ? `&cursor_string=${encodeURIComponent(cursor)}` : '';
-    const responses = await Promise.all(
-      queries.map((query) =>
-        this.request(`/api/v2/beatmapsets/search?m=0&s=rating${cursorPart}&q=${encodeURIComponent(query)}`).catch(
-          () => null,
-        ),
-      ),
-    );
+    const url = (item, pageCursor) =>
+      `/api/v2/beatmapsets/search?m=0&s=rating&q=${encodeURIComponent(item.query)}${
+        item.g ? `&g=${item.g}` : ''
+      }${item.l ? `&l=${item.l}` : ''}${pageCursor ? `&cursor_string=${encodeURIComponent(pageCursor)}` : ''}`;
+
+    const responses = await Promise.all(queries.map((item) => this.request(url(item, cursor)).catch(() => null)));
 
     const base = responses[0];
     if (!base) {
@@ -334,7 +400,7 @@ class OsuApi {
     const excluded = new Set(excludeSetIds);
     const bySet = new Map();
 
-    for (const data of responses) {
+    const addSets = (data) => {
       for (const set of data?.beatmapsets || []) {
         if (excluded.has(set.id) || bySet.has(set.id)) continue;
         const diffs = (set.beatmaps || []).filter(
@@ -374,17 +440,47 @@ class OsuApi {
           tags: set.tags || '',
         });
       }
+    };
+
+    for (const data of responses) addSets(data);
+
+    const rankedStatus = new Set(['ranked', 'approved', 'qualified']);
+    const keep = (map) => {
+      if (wanted.genres.length && !wanted.genres.includes(Number(map.genreId))) return false;
+      if (wanted.languages.length && !wanted.languages.includes(Number(map.languageId))) return false;
+      if (wanted.rankedOnly && !rankedStatus.has(map.status)) return false;
+      if (hideArtists.has(String(map.artist || '').toLowerCase())) return false;
+      if (hideMappers.has(String(map.mapper || '').toLowerCase())) return false;
+      return true;
+    };
+    const passing = () => {
+      let count = 0;
+      for (const map of bySet.values()) if (keep(map)) count += 1;
+      return count;
+    };
+
+    // Hiding an artist or mapper is our own filter, so pull a couple of extra
+    // pages when the current pool thins out.
+    let pageCursor = base.cursor_string || '';
+    let pages = 0;
+    while (needsFiltering && passing() < limit * 2 && pageCursor && pages < 3) {
+      const more = await this.request(url(queries[0], pageCursor)).catch(() => null);
+      if (!more) break;
+      addSets(more);
+      pageCursor = more.cursor_string || '';
+      pages += 1;
     }
 
     const maps = [...bySet.values()]
-      .map((map) => ({ map, score: tasteScore(map, preferences, target, taste) }))
+      .filter(keep)
+      .map((map) => ({ map, score: tasteScore(map, preferences, target, scoringTaste) }))
       .sort((a, b) => b.score - a.score || Math.abs(a.map.stars - target) - Math.abs(b.map.stars - target));
 
     // When the player is not into Japanese music, anime/doujin maps never take
     // the main list. If there is not enough else, they go to a separate
     // «ближайшее» block, honestly labelled, instead of quietly filling the page.
     const anime = maps.filter((entry) => isAnimeish(entry.map));
-    const mainPool = taste.avoidJapanese ? maps.filter((entry) => !isAnimeish(entry.map)) : maps;
+    const mainPool = avoidJapanese ? maps.filter((entry) => !isAnimeish(entry.map)) : maps;
 
     const pickFrom = (pool, max) => {
       const picked = [];
@@ -411,7 +507,7 @@ class OsuApi {
       why: tasteReasons(map, preferences, target, taste),
     }));
 
-    const fallback = taste.avoidJapanese
+    const fallback = avoidJapanese
       ? pickFrom(anime, 6).map((map) => ({
           ...map,
           why: ['не твой жанр', 'ближайшее из остального'],
@@ -420,7 +516,8 @@ class OsuApi {
 
     const value = {
       ok: true,
-      total: base.total || maps.length,
+      // With several genre/language combos the total is the sum of the pools.
+      total: responses.reduce((sum, data) => sum + (data?.total || 0), 0) || maps.length,
       maps: main,
       fallback,
       next: base.cursor_string || null,
@@ -433,19 +530,26 @@ class OsuApi {
    * Plain text search over osu! beatmapsets: «Capsize», «tigah woods», a mapper.
    * The fastest way to stop arguing with recommendations — type what you want.
    */
-  async quickSearch(text, { limit = 20, target = 0, excludeSetIds = [] } = {}) {
-    if (!this.configured()) return { ok: false, error: 'no credentials', maps: [], total: 0 };
+  async quickSearch(text, { limit = 20, target = 0, excludeSetIds = [], cursor = '', rankedOnly = false } = {}) {
+    if (!this.configured()) return { ok: false, error: 'no credentials', maps: [], total: 0, next: null };
     const query = String(text || '')
       .trim()
       .slice(0, 80);
-    if (query.length < 2) return { ok: true, maps: [], total: 0 };
+    if (query.length < 2) return { ok: true, maps: [], total: 0, next: null };
 
-    const key = `q:${query.toLowerCase()}:${limit}:${Math.round(target * 10)}`;
+    const key = `q:${query.toLowerCase()}:${limit}:${Math.round(target * 10)}:${cursor}:${rankedOnly ? 1 : 0}`;
     const cached = this.searchCache.get(key);
     if (cached && Date.now() - cached.at < 2 * 60 * 1000) return cached.value;
 
     try {
-      const data = await this.request(`/api/v2/beatmapsets/search?m=0&s=any&q=${encodeURIComponent(query)}`);
+      // `status=ranked` is one of the few filters the osu! search endpoint does
+      // understand, unlike genre/language.
+      const text2 = rankedOnly ? `${query} status=ranked` : query;
+      const data = await this.request(
+        `/api/v2/beatmapsets/search?m=0&s=any&q=${encodeURIComponent(text2)}${
+          cursor ? `&cursor_string=${encodeURIComponent(cursor)}` : ''
+        }`,
+      );
       const excluded = new Set(excludeSetIds);
       const maps = [];
       for (const set of data?.beatmapsets || []) {
@@ -473,15 +577,22 @@ class OsuApi {
           od: pick.od ?? 0,
           cover: set.covers?.cover || set.covers?.list || set.covers?.card || '',
           status: set.status || '',
+          genreId: set.genre_id ?? null,
+          languageId: set.language_id ?? null,
           why: [],
         });
         if (maps.length >= limit) break;
       }
-      const value = { ok: true, maps, total: data?.total || maps.length, next: null };
+      const value = {
+        ok: true,
+        maps,
+        total: data?.total || maps.length,
+        next: data?.cursor_string || null,
+      };
       this.searchCache.set(key, { at: Date.now(), value });
       return value;
     } catch (err) {
-      return { ok: false, error: String(err.message || err), maps: [], total: 0 };
+      return { ok: false, error: String(err.message || err), maps: [], total: 0, next: null };
     }
   }
 

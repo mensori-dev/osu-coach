@@ -331,6 +331,9 @@ export function Campaign({ boot, onOpenMaps }: Props) {
                   промахов <b>≤ {stage.maxMiss}</b>
                 </span>
                 <span className="run-goal dim">≈{stage.notes} нот</span>
+                {stage.curveAcc != null && (
+                  <span className="run-goal dim">твой уровень ≈ {fmtNum(stage.curveAcc, 1)}%</span>
+                )}
                 {isNew && <span className="map-chip run-new">новая карта</span>}
                 {stage.passed && stage.best && (
                   <span className="run-done-chip">лучшая {fmtNum(stage.best.acc, 1)}%</span>
@@ -344,6 +347,12 @@ export function Campaign({ boot, onOpenMaps }: Props) {
                       ? `Пока не зачтено. Лучшая попытка: ${attemptLine(stage.best?.acc ?? 0, stage.best?.miss ?? 0)}. Ещё раз — и зачтётся.`
                       : 'Сыграй карту. Этап отметится сам, как только osu! запишет счёт — реплей и кнопки не нужны.'}
                   </p>
+                  {!!stage.relief && (
+                    <p className="run-relief">
+                      план отпустил: {stage.relief} {plural(stage.relief, 'раз', 'раза', 'раз')} по 0.6% и одному
+                      промаху, потому что два раза подряд мимо.
+                    </p>
+                  )}
                   {stage.attempts.length > 0 && (
                     <div className="run-attempts">
                       {stage.attempts.slice(-4).map((attempt) => (

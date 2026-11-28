@@ -280,6 +280,15 @@ export type ModPref = 'nm' | 'hr' | 'dt' | 'hd' | 'other' | 'unknown';
 export type Annoy = 'misses' | 'speed' | 'reading' | 'maps' | 'nothing' | 'unknown';
 export type OverlayPos = 'tl' | 'tr' | 'bl' | 'br';
 
+/** What the player wants to see in the online recommendations. */
+export interface MapFilters {
+  genres: number[];
+  languages: number[];
+  rankedOnly: boolean;
+  hideArtists: string[];
+  hideMappers: string[];
+}
+
 export interface Settings {
   user: string;
   demo: boolean;
@@ -301,6 +310,7 @@ export interface Settings {
   theme: Theme;
   overlay: boolean;
   overlayPos: OverlayPos;
+  mapFilters: MapFilters;
 }
 
 export interface MapSuggestion {
@@ -318,6 +328,8 @@ export interface MapSuggestion {
   od: number;
   cover: string;
   status: string;
+  genreId?: number | null;
+  languageId?: number | null;
   why?: string[];
 }
 
@@ -331,6 +343,7 @@ export interface MapSearchParams {
   limit?: number;
   cursor?: string;
   force?: boolean;
+  filters?: MapFilters;
 }
 
 export interface MapSearchResult {
@@ -474,8 +487,12 @@ export interface CampaignStage {
   map: CampaignMap;
   source: 'library' | 'new';
   targetAcc: number;
+  /** The player's own accuracy at this map's star rating, from the scan. */
+  curveAcc?: number | null;
   maxMiss: number;
   notes: number;
+  /** How many times the plan has loosened this stage after failed attempts. */
+  relief?: number;
   attempts: CampaignAttempt[];
   best: CampaignAttempt | null;
   passed: boolean;
@@ -542,6 +559,8 @@ export interface Bridge {
     limit?: number;
     target?: number;
     excludeSetIds?: number[];
+    cursor?: string;
+    rankedOnly?: boolean;
   }) => Promise<MapSearchResult>;
   installedSets: () => Promise<number[]>;
   openMap: (target: number | { id: number; title?: string }) => Promise<OpenMapResult>;

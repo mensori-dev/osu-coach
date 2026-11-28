@@ -16,21 +16,79 @@ const STAGES = 7;
 const MAX_LENGTH = 210; // 3:30 — long enough to matter, short enough for one evening
 const MIN_LENGTH = 55;
 const MISS_CAP = 15;
+const RULES = 2; // bumped when pass criteria change, so old campaigns get retargeted
+
+// How many failed attempts in a row before the plan lets go, and by how much.
+const RELIEF_AFTER = 2;
+const RELIEF_STEP = 0.6;
+const RELIEF_MAX = 3;
 
 // Star bands relative to the player's comfort line, and how much accuracy is
-// added on top of their own median at that band.
+// added on top of their own accuracy at that star rating. The headroom shrinks
+// as the maps get harder: the difficulty itself is the challenge, the accuracy
+// line just holds the player at their own level instead of taxing them twice.
 const BANDS = [
-  { lo: -1.0, hi: -0.3, familiar: true, acc: 0.2, miss: 0.4 },
-  { lo: -0.55, hi: 0.05, familiar: true, acc: 0.5, miss: 0.45 },
-  { lo: -0.2, hi: 0.3, familiar: true, acc: 0.8, miss: 0.5 },
-  { lo: 0.0, hi: 0.5, familiar: false, acc: 1.1, miss: 0.55 },
-  { lo: 0.3, hi: 0.75, familiar: false, acc: 1.4, miss: 0.6 },
-  { lo: 0.5, hi: 1.0, familiar: false, acc: 1.7, miss: 0.65 },
-  { lo: 0.6, hi: 1.2, familiar: false, acc: 2.0, miss: 0.7, fresh: true },
+  { lo: -1.0, hi: -0.3, familiar: true, head: 0.6 },
+  { lo: -0.55, hi: 0.05, familiar: true, head: 0.5 },
+  { lo: -0.2, hi: 0.3, familiar: true, head: 0.4 },
+  { lo: 0.0, hi: 0.5, familiar: false, head: 0.3 },
+  { lo: 0.3, hi: 0.75, familiar: false, head: 0.2 },
+  { lo: 0.5, hi: 1.0, familiar: false, head: 0.1 },
+  { lo: 0.6, hi: 1.2, familiar: false, head: 0, fresh: true },
 ];
 
 const round1 = (value) => Math.round(value * 10) / 10;
 const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
+
+/**
+ * The player's own accuracy at every half star, straight from the scan. This is
+ * the whole point of the campaign: the bar is what the player actually does at
+ * that difficulty, not a table plus a made-up bonus.
+ */
+function accuracyCurve(scan) {
+  const buckets = Array.isArray(scan?.buckets) ? scan.buckets : [];
+  return buckets
+    .filter((item) => item && item.count >= 10 && item.acc > 0)
+    .map((item) => ({ star: Number(item.star), acc: Number(item.acc), n: Number(item.count) }))
+    .sort((a, b) => a.star - b.star);
+}
+
+function curveAt(points, star) {
+  if (!points.length) return null;
+  if (points.length === 1) return points[0].acc;
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (star <= first.star) {
+    const next = points[1];
+    const slope = (next.acc - first.acc) / Math.max(0.1, next.star - first.star);
+    return clamp(first.acc + slope * (star - first.star), 55, 99);
+  }
+  if (star >= last.star) {
+    const prev = points[points.length - 2];
+    const slope = (last.acc - prev.acc) / Math.max(0.1, last.star - prev.star);
+    return clamp(last.acc + slope * (star - last.star), 50, 99);
+  }
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const a = points[i];
+    const b = points[i + 1];
+    if (star >= a.star && star <= b.star) {
+      const t = (star - a.star) / Math.max(0.1, b.star - a.star);
+      return a.acc + (b.acc - a.acc) * t;
+    }
+  }
+  return last.acc;
+}
+
+function targetOf(points, star, head, baseAcc) {
+  const own = curveAt(points, star);
+  return round1(clamp(own != null ? own + head : baseAcc + head, 80, 97));
+}
+
+/** Misses the player usually makes on a map of this length, plus a cushion. */
+function missBudget(notes, missRate, index) {
+  const usual = Math.round((notes * missRate) / 100);
+  return clamp(usual + (index >= 4 ? 2 : 1), 2, MISS_CAP);
+}
 
 function playable(map) {
   return Boolean(map && map.stars > 0 && map.drainTime >= MIN_LENGTH && map.drainTime <= MAX_LENGTH);
@@ -108,6 +166,7 @@ function build(scan, newMap) {
   const comfort = clamp(scan?.comfortStar ?? 3.5, 1.2, 8.5);
   const baseAcc = clamp(scan?.comfortAcc ?? scan?.medianAcc ?? 92, 80, 99);
   const missRate = clamp(scan?.skills?.missRate ?? 2, 0.05, 12);
+  const curve = accuracyCurve(scan);
 
   const used = new Set();
   const stages = [];
@@ -129,16 +188,19 @@ function build(scan, newMap) {
 
     const map = mapOf(entry);
     const notes = stageNotes(map);
-    const targetAcc = clamp(round1(baseAcc + band.acc), 86, 98.5);
-    const maxMiss = clamp(Math.round(((notes * missRate) / 100) * band.miss), i < 2 ? 1 : 0, MISS_CAP);
+    const own = curveAt(curve, map.stars);
+    const targetAcc = targetOf(curve, map.stars, band.head, baseAcc);
+    const maxMiss = missBudget(notes, missRate, i);
 
     stages.push({
       index: stages.length + 1,
       map,
       source: i === STAGES - 1 && newMap && entry.id === newMap.id ? 'new' : 'library',
       targetAcc,
+      curveAcc: own != null ? round1(own) : null,
       maxMiss,
       notes,
+      relief: 0,
       attempts: [],
       best: null,
       passed: false,
@@ -149,6 +211,7 @@ function build(scan, newMap) {
   return {
     createdAt: Date.now(),
     updatedAt: Date.now(),
+    rules: RULES,
     comfortStar: round1(comfort),
     baseAcc: round1(baseAcc),
     missRate: Math.round(missRate * 100) / 100,
@@ -170,6 +233,44 @@ function round2(value) {
   return Math.round(value * 100) / 100;
 }
 
+/** Re-judges every stored attempt against the current criteria. */
+function rejudge(stage) {
+  let best = null;
+  let passedAt = null;
+  for (const attempt of stage.attempts) {
+    attempt.passed = judge(stage, attempt);
+    if (!best || attempt.acc > best.acc) best = attempt;
+    if (attempt.passed && passedAt == null) passedAt = attempt.at;
+  }
+  stage.best = best ? { ...best } : null;
+  if (passedAt != null) {
+    stage.passed = true;
+    if (!stage.passedAt || stage.passedAt > passedAt) stage.passedAt = passedAt;
+  }
+  return stage.passed;
+}
+
+/**
+ * The plan lets go after every two failed attempts: a small accuracy cut and
+ * one extra miss, up to three times. A stage that just does not suit the player
+ * must not become a wall.
+ */
+function applyRelief(stage) {
+  const failed = stage.attempts.filter((attempt) => !attempt.passed).length;
+  const relief = Math.min(RELIEF_MAX, Math.floor(failed / RELIEF_AFTER));
+  const had = stage.relief || 0;
+  if (relief <= had) return false;
+
+  const floor = stage.curveAcc != null ? Math.max(80, stage.curveAcc - 2) : 80;
+  const steps = relief - had;
+  stage.targetAcc = round1(Math.max(floor, stage.targetAcc - RELIEF_STEP * steps));
+  stage.maxMiss = Math.min(MISS_CAP, stage.maxMiss + steps);
+  stage.relief = relief;
+  stage.relievedAt = Date.now();
+  rejudge(stage);
+  return true;
+}
+
 /**
  * Credits a play the second the results screen appears, without waiting for
  * scores.db. The db scan lands the same play later; sync() drops the live copy
@@ -186,16 +287,19 @@ function credit(state, play) {
     return null;
   }
 
-  const attempt = { at, acc, miss: play.miss || 0, passed: judge(stage, { ...play, acc }), live: true };
+  const attempt = { at, acc, miss: play.miss || 0, passed: false, live: true };
   stage.attempts.push(attempt);
   if (stage.attempts.length > 40) stage.attempts = stage.attempts.slice(-40);
+  attempt.passed = judge(stage, attempt);
   if (!stage.best || acc > stage.best.acc) stage.best = { ...attempt };
   if (attempt.passed && !stage.passed) {
     stage.passed = true;
     stage.passedAt = at;
+  } else if (!stage.passed) {
+    applyRelief(stage);
   }
   state.updatedAt = Date.now();
-  return { stage: stage.index, passed: attempt.passed, acc, miss: attempt.miss };
+  return { stage: stage.index, passed: stage.passed, acc, miss: attempt.miss, relief: stage.relief || 0 };
 }
 
 /**
@@ -226,17 +330,24 @@ function sync(state, scan) {
         at: play.at,
         acc: Math.round(play.acc * 100) / 100,
         miss: play.miss,
-        passed: judge(stage, play),
+        passed: false,
       };
       stage.attempts.push(attempt);
       if (stage.attempts.length > 40) stage.attempts = stage.attempts.slice(-40);
+      attempt.passed = judge(stage, attempt);
       if (!stage.best || attempt.acc > stage.best.acc) stage.best = { ...attempt };
       if (attempt.passed && !stage.passed) {
         stage.passed = true;
         stage.passedAt = play.at;
+      } else if (!stage.passed) {
+        applyRelief(stage);
       }
       changed = true;
     }
+
+    // A stage that already collected failed attempts (an older save, a restored
+    // backup) still deserves the relief those misses earned.
+    if (!stage.passed && applyRelief(stage)) changed = true;
   }
 
   // Personal records: any map whose best accuracy moved up since the last scan.
@@ -269,6 +380,38 @@ function sync(state, scan) {
 
   if (changed) state.updatedAt = now;
   return { changed, records };
+}
+
+/**
+ * Recalculates the criteria of an already-built campaign with the current
+ * rules, keeping maps and progress. Old attempts are re-judged, so a play that
+ * was above the player's real level but below the old inflated target passes.
+ */
+function retarget(state, scan) {
+  if (!state?.stages?.length) return false;
+  if (state.rules === RULES) return false;
+
+  const curve = accuracyCurve(scan);
+  const baseAcc = clamp(scan?.comfortAcc ?? scan?.medianAcc ?? state.baseAcc ?? 92, 80, 99);
+  const missRate = clamp(scan?.skills?.missRate ?? state.missRate ?? 2, 0.05, 12);
+
+  for (const stage of state.stages) {
+    const index = stage.index - 1;
+    const band = BANDS[index] || BANDS[BANDS.length - 1];
+    const own = curveAt(curve, stage.map.stars);
+    stage.curveAcc = own != null ? round1(own) : null;
+    stage.targetAcc = targetOf(curve, stage.map.stars, band.head, baseAcc);
+    stage.maxMiss = missBudget(stage.notes || 0, missRate, index);
+    stage.relief = 0;
+    delete stage.relievedAt;
+    rejudge(stage);
+  }
+
+  state.rules = RULES;
+  state.baseAcc = round1(baseAcc);
+  state.missRate = Math.round(missRate * 100) / 100;
+  state.updatedAt = Date.now();
+  return true;
 }
 
 function progress(state) {
@@ -324,4 +467,15 @@ class CampaignStore {
   }
 }
 
-module.exports = { CampaignStore, build, sync, credit, view, progress, stageNotes, MAX_LENGTH };
+module.exports = {
+  CampaignStore,
+  build,
+  sync,
+  credit,
+  retarget,
+  view,
+  progress,
+  stageNotes,
+  MAX_LENGTH,
+  RULES,
+};
