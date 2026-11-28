@@ -1,6 +1,6 @@
 {
   "name": "osu-coach",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Live osu! coach: real-time play analysis, skill curve and training plan",
   "author": "mens0ri",
@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@napi-rs/lzma": "^1.5.3",
+    "electron-updater": "^6.8.11",
     "ws": "^8.23.0"
   },
   "devDependencies": {

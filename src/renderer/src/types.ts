@@ -338,6 +338,7 @@ export interface MapSearchResult {
   error?: string;
   total: number;
   maps: MapSuggestion[];
+  fallback?: MapSuggestion[];
   next?: string | null;
 }
 
@@ -445,6 +446,72 @@ export interface ReplayResult {
   analysis: ReplayAnalysis | null;
 }
 
+export interface CampaignMap {
+  id: number;
+  setId: number;
+  title: string;
+  artist: string;
+  diff: string;
+  mapper: string;
+  stars: number;
+  bpm: number;
+  drainTime: number;
+  ar: number;
+  od: number;
+}
+
+export interface CampaignAttempt {
+  at: number;
+  acc: number;
+  miss: number;
+  passed: boolean;
+}
+
+export interface CampaignStage {
+  index: number;
+  map: CampaignMap;
+  source: 'library' | 'new';
+  targetAcc: number;
+  maxMiss: number;
+  notes: number;
+  attempts: CampaignAttempt[];
+  best: CampaignAttempt | null;
+  passed: boolean;
+  passedAt: number | null;
+}
+
+export interface CampaignState {
+  createdAt: number;
+  updatedAt: number;
+  comfortStar: number;
+  baseAcc: number;
+  missRate: number;
+  stages: CampaignStage[];
+  records: Record<string, number>;
+  recordsSeeded: boolean;
+  newMapSource?: 'osu' | 'library';
+  progress: { done: number; total: number };
+}
+
+export interface RecordEvent {
+  mapId: number;
+  title: string;
+  diff: string;
+  artist: string;
+  acc: number;
+  prev: number;
+  at: number;
+}
+
+export interface UpdateState {
+  status: 'idle' | 'dev' | 'checking' | 'current' | 'available' | 'downloading' | 'ready' | 'error';
+  version: string;
+  percent: number;
+  error: string;
+  checkedAt: number;
+  manual: boolean;
+}
+
 export interface Bootstrap {
   settings: Settings;
   live: LivePayload;
@@ -454,6 +521,8 @@ export interface Bootstrap {
   history: ProfileFact[];
   paths: { osuDir: string; dataDir: string; envFile: string };
   version: string;
+  updates?: UpdateState;
+  campaign?: CampaignState | null;
 }
 
 export interface Bridge {
@@ -466,6 +535,12 @@ export interface Bridge {
   refreshApi: () => Promise<ApiSnapshot>;
   setSettings: (patch: Partial<Settings>) => Promise<Settings>;
   searchMaps: (params: MapSearchParams) => Promise<MapSearchResult>;
+  quickSearch: (params: {
+    text: string;
+    limit?: number;
+    target?: number;
+    excludeSetIds?: number[];
+  }) => Promise<MapSearchResult>;
   installedSets: () => Promise<number[]>;
   openMap: (target: number | { id: number; title?: string }) => Promise<OpenMapResult>;
   coverData: (url: string) => Promise<string | null>;
@@ -473,6 +548,17 @@ export interface Bridge {
   launchTosu: () => Promise<TosuLaunchResult>;
   pickTosu: () => Promise<{ ok: boolean; path?: string; cancelled?: boolean }>;
   openExternal: (url: string) => Promise<unknown>;
+  campaignPlan: () => Promise<{ ok: boolean; error?: string; campaign: CampaignState | null }>;
+  campaignReset: () => Promise<{ ok: boolean; campaign: null }>;
+  campaignState: () => Promise<CampaignState | null>;
+  onRecord: (cb: (records: RecordEvent[]) => void) => () => void;
+  updates: {
+    state: () => Promise<UpdateState>;
+    check: () => Promise<UpdateState>;
+    download: () => Promise<UpdateState>;
+    install: () => Promise<boolean>;
+    onState: (cb: (state: UpdateState) => void) => () => void;
+  };
   onLive: (cb: (payload: LivePayload) => void) => () => void;
   onData: (cb: (boot: Bootstrap) => void) => () => void;
   win: {

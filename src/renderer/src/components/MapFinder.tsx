@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Bootstrap, MapEntry, MapSearchResult, MapSuggestion } from '../types';
-import { bridge, useLive, useNow } from '../hooks';
-import { fmtInt, fmtNum, fmtTime } from '../utils';
+import { bridge, useNow } from '../hooks';
+import { fmtInt, fmtNum, fmtTime, plural } from '../utils';
 import { IconArrowRight, IconDownload, IconExternal, IconRefresh, IconSearch, IconSpark, IconStar } from './Icons';
 import { PreviewButton } from './Preview';
 import { openInOsu } from '../openMap';
@@ -9,6 +9,7 @@ import { openInOsu } from '../openMap';
 interface Props {
   boot: Bootstrap;
   onScan: () => void;
+  liveMapId?: number;
 }
 
 function similarity(map: MapEntry, seed: MapEntry): number {
@@ -161,9 +162,8 @@ function OnlineRow({
   );
 }
 
-export function MapFinder({ boot, onScan }: Props) {
+export function MapFinder({ boot, onScan, liveMapId = 0 }: Props) {
   const scan = boot.scan;
-  const live = useLive();
   const [onlyNew, setOnlyNew] = useState(true);
   const [online, setOnline] = useState<MapSearchResult | null>(null);
   const [onlineLoading, setOnlineLoading] = useState(false);
@@ -173,9 +173,11 @@ export function MapFinder({ boot, onScan }: Props) {
   const [downloaded, setDownloaded] = useState<number[]>([]);
   const [installedSets, setInstalledSets] = useState<number[]>([]);
   const [notice, setNotice] = useState('');
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<MapSearchResult | null>(null);
+  const [searching, setSearching] = useState(false);
   const now = useNow(60_000);
   const maps = useMemo(() => scan?.maps ?? [], [scan]);
-  const liveMapId = live?.beatmap?.id ?? 0;
 
   const refreshInstalled = useCallback(() => {
     bridge
@@ -210,6 +212,44 @@ export function MapFinder({ boot, onScan }: Props) {
 
   const playedCount = useMemo(() => maps.filter((map) => map.plays > 0).length, [maps]);
   const comfort = scan?.comfortStar ?? 3.5;
+
+  const searchValue = query.trim();
+  const searchingNow = searchValue.length >= 2;
+
+  useEffect(() => {
+    if (!searchingNow) return;
+    let alive = true;
+    const id = window.setTimeout(() => {
+      setSearching(true);
+      bridge
+        .quickSearch({
+          text: searchValue,
+          limit: 20,
+          target: Math.round((comfort + 0.35) * 10) / 10,
+        })
+        .then((value) => {
+          if (alive) setResults(value);
+        })
+        .catch((err) => {
+          if (alive) setResults({ ok: false, error: String(err), total: 0, maps: [] });
+        })
+        .finally(() => {
+          if (alive) setSearching(false);
+        });
+    }, 320);
+    return () => {
+      alive = false;
+      window.clearTimeout(id);
+    };
+  }, [searchValue, searchingNow, comfort]);
+
+  const localHits = useMemo(() => {
+    if (!searchingNow) return [];
+    const needle = searchValue.toLowerCase();
+    return maps
+      .filter((map) => `${map.title} ${map.artist} ${map.mapper} ${map.diff}`.toLowerCase().includes(needle))
+      .slice(0, 6);
+  }, [maps, searchValue, searchingNow]);
 
   const tasteLine = useMemo(() => {
     const creators = (scan?.preferences?.creators ?? []).slice(0, 2).map((item) => item.name);
@@ -349,7 +389,7 @@ export function MapFinder({ boot, onScan }: Props) {
         : '';
 
   return (
-    <div className="maps fade-in">
+    <div className={'maps fade-in' + (searchingNow ? ' searching' : '')}>
       <div className="maps-head">
         <div>
           <div className="card-title">подбор карт</div>
@@ -374,6 +414,89 @@ export function MapFinder({ boot, onScan }: Props) {
           </button>
         </div>
       </div>
+
+      <div className="map-search">
+        <IconSearch size={15} />
+        <input
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setResults(null);
+            setSearching(false);
+          }}
+          placeholder="найти карту: название, артист или маппер"
+          spellCheck={false}
+        />
+        {query && (
+          <button
+            className="map-search-clear"
+            onClick={() => {
+              setQuery('');
+              setResults(null);
+              setSearching(false);
+            }}
+            aria-label="очистить"
+          >
+            ×
+          </button>
+        )}
+      </div>
+
+      {searchingNow && (
+        <section className="map-section search-section">
+          <div className="section-title">
+            <IconSearch size={14} /> поиск · «{searchValue}»
+          </div>
+          {localHits.length > 0 && (
+            <div className="card map-list">
+              {localHits.map((map) => (
+                <MapRow
+                  key={map.id}
+                  map={map}
+                  reasons={[
+                    map.plays ? `${map.plays} ${plural(map.plays, 'плей', 'плея', 'плеев')}` : 'ещё не играл',
+                    'уже в базе',
+                  ]}
+                  onOpen={() => void open(map)}
+                />
+              ))}
+            </div>
+          )}
+          <div className="card map-list online-list">
+            {searching && !results ? (
+              <div className="online-skeleton">
+                <i />
+                <i />
+                <i />
+              </div>
+            ) : results?.ok && results.maps.length ? (
+              results.maps.map((map) => (
+                <OnlineRow
+                  key={map.id}
+                  map={map}
+                  downloading={downloadId === map.setId}
+                  downloaded={downloaded.includes(map.setId)}
+                  installed={installed.has(map.setId)}
+                  onDownload={() => download(map)}
+                  onOpen={() => void open(map)}
+                />
+              ))
+            ) : (
+              <div className="online-state">
+                <span className="online-state-icon">
+                  <IconSearch size={17} />
+                </span>
+                <b>{results?.ok ? 'в osu! такого не нашлось' : 'поиск не отвечает'}</b>
+                <p>
+                  {results?.error === 'no credentials'
+                    ? 'Без ключей osu! API ищу только по своей базе — она выше.'
+                    : results?.error || 'Попробуй другое название или проверь сеть.'}
+                </p>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       {seed && (
         <div className="card seed-card">
@@ -484,6 +607,26 @@ export function MapFinder({ boot, onScan }: Props) {
             </div>
           )}
         </div>
+        {online && online.maps.length < 6 && (online.fallback?.length ?? 0) > 0 && (
+          <div className="online-fallback">
+            <div className="online-fallback-note">
+              подходящего под твой вкус мало — вот ближайшее, но это не твой жанр
+            </div>
+            <div className="card map-list online-list">
+              {online.fallback?.map((map) => (
+                <OnlineRow
+                  key={map.id}
+                  map={map}
+                  downloading={downloadId === map.setId}
+                  downloaded={downloaded.includes(map.setId)}
+                  installed={installed.has(map.setId)}
+                  onDownload={() => download(map)}
+                  onOpen={() => void open(map)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
         {notice && <div className="bd-open-note map-notice">{notice}</div>}
       </section>
 

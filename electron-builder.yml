@@ -6,6 +6,11 @@ directories:
   output: release
   buildResources: build
 
+publish:
+  provider: github
+  owner: mensori-dev
+  repo: osu-coach
+
 files:
   - dist/renderer/**
   - src/main/**

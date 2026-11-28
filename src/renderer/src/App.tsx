@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { AnimatePresence, MotionConfig, motion } from 'framer-motion';
 import type { Bootstrap, FreshPlay, Settings } from './types';
 import { bridge, useLive } from './hooks';
 import { TitleBar, type Tab } from './components/TitleBar';
@@ -14,8 +14,19 @@ import { Onboarding } from './components/Onboarding';
 import { Splash } from './components/Splash';
 import { Greeting } from './components/Greeting';
 import { Tutorial } from './components/Tutorial';
+import { UpdateBar } from './components/UpdateBar';
+import { RecordToast } from './components/RecordToast';
 import { accentStyle, themeCover, themeStyle } from './theme';
 import { useCoverAccent } from './components/accent';
+
+// Live data arrives 20 times a second. Pages that do not depend on it should
+// not re-render that often, so they are memoised and receive stable callbacks.
+const MemoPlays = memo(PlaysView);
+const MemoPlan = memo(PlanView);
+const MemoDashboard = memo(Dashboard);
+const MemoMapFinder = memo(MapFinder);
+const MemoProfile = memo(ProfileView);
+const MemoSettings = memo(SettingsView);
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('live');
@@ -65,6 +76,19 @@ export default function App() {
     setBoot((prev) => (prev ? { ...prev, settings: { ...prev.settings, ...next } } : prev));
     const saved = await bridge.setSettings(next);
     setBoot((prev) => (prev ? { ...prev, settings: saved } : prev));
+  }, []);
+
+  const goMaps = useCallback(() => setTab('maps'), []);
+  const goPlays = useCallback(() => setTab('plays'), []);
+  const setDemo = useCallback(
+    (on: boolean) => {
+      void patch({ demo: on });
+    },
+    [patch],
+  );
+  const openHelp = useCallback(() => {
+    setGreet(false);
+    setTour(true);
   }, []);
 
   const rescan = useCallback(async () => {
@@ -151,106 +175,117 @@ export default function App() {
     themeStyle(theme) ?? (coverAccent ? accentStyle(coverAccent.a, coverAccent.b, coverAccent.tint) : undefined);
 
   return (
-    <div className={'app' + (maxed ? ' maxed' : '')} style={appStyle}>
-      <div className="aurora">
-        <span className="a1" />
-        <span className="a2" />
-        <span className="a3" />
-      </div>
-      <div className="vignette" />
-
-      <TitleBar
-        tab={tab}
-        onTab={setTab}
-        live={payload}
-        demo={demo}
-        onDemo={(on) => patch({ demo: on })}
-        onHelp={() => {
-          setGreet(false);
-          setTour(true);
-        }}
-      />
-
-      <div className="content">
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div
-            key={tab}
-            className="page"
-            initial={{ opacity: 0, y: 10, filter: 'blur(6px)' }}
-            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-            exit={{ opacity: 0, y: -8, filter: 'blur(6px)' }}
-            transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
-          >
-            {tab === 'live' && (
-              <LiveView
-                live={payload}
-                demo={demo}
-                boot={boot}
-                accent={theme === 'cover'}
-                onDemo={(on) => patch({ demo: on })}
-                onOpenPlays={() => setTab('plays')}
-                onTab={setTab}
+    <MotionConfig reducedMotion="user">
+      <div className={'app' + (maxed ? ' maxed' : '') + (accentCover ? ' cover' : '')} style={appStyle}>
+        {accentCover && (
+          <div className="cover-bg" aria-hidden>
+            <AnimatePresence initial={false}>
+              <motion.div
+                key={accentCover}
+                className="cover-bg-img"
+                style={{ backgroundImage: `url("${accentCover}")` }}
+                initial={{ opacity: 0, scale: 1.16 }}
+                animate={{ opacity: 0.8, scale: 1.12 }}
+                exit={{ opacity: 0 }}
+                transition={{ opacity: { duration: 0.9, ease: 'easeOut' }, scale: { duration: 6, ease: 'easeOut' } }}
               />
-            )}
+            </AnimatePresence>
+            <div className="cover-bg-scrim" />
+          </div>
+        )}
+        <div className="aurora">
+          <span className="a1" />
+          <span className="a2" />
+          <span className="a3" />
+        </div>
+        <div className="vignette" />
 
-            {tab === 'plays' &&
-              (boot ? (
-                <PlaysView boot={boot} fresh={fresh} onScan={rescan} />
-              ) : (
-                <div className="empty">Читаю данные…</div>
-              ))}
+        <TitleBar tab={tab} onTab={setTab} live={payload} demo={demo} onDemo={setDemo} onHelp={openHelp} />
 
-            {tab === 'plan' &&
-              (boot ? (
-                <PlanView boot={boot} onOpenMaps={() => setTab('maps')} />
-              ) : (
-                <div className="empty">Читаю данные…</div>
-              ))}
+        <div className="content">
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={tab}
+              className="page"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            >
+              {tab === 'live' && (
+                <LiveView
+                  live={payload}
+                  demo={demo}
+                  boot={boot}
+                  accent={theme === 'cover'}
+                  onDemo={setDemo}
+                  onOpenPlays={goPlays}
+                  onTab={setTab}
+                />
+              )}
 
-            {tab === 'dash' &&
-              (boot ? (
-                <Dashboard boot={boot} live={live} onRefresh={refreshApi} onTab={setTab} />
-              ) : (
-                <div className="empty">Читаю данные…</div>
-              ))}
+              {tab === 'plays' &&
+                (boot ? (
+                  <MemoPlays boot={boot} fresh={fresh} onScan={rescan} />
+                ) : (
+                  <div className="empty">Читаю данные…</div>
+                ))}
 
-            {tab === 'maps' &&
-              (boot ? <MapFinder boot={boot} onScan={rescan} /> : <div className="empty">Читаю данные…</div>)}
+              {tab === 'plan' &&
+                (boot ? <MemoPlan boot={boot} onOpenMaps={goMaps} /> : <div className="empty">Читаю данные…</div>)}
 
-            {tab === 'profile' &&
-              (boot ? <ProfileView boot={boot} onScan={rescan} /> : <div className="empty">Читаю данные…</div>)}
+              {tab === 'dash' &&
+                (boot ? (
+                  <MemoDashboard boot={boot} live={live} onRefresh={refreshApi} onTab={setTab} />
+                ) : (
+                  <div className="empty">Читаю данные…</div>
+                ))}
 
-            {tab === 'settings' &&
-              (boot ? (
-                <SettingsView boot={boot} onPatch={patch} onScan={rescan} onRefresh={refreshApi} />
-              ) : (
-                <div className="empty">Читаю данные…</div>
-              ))}
-          </motion.div>
+              {tab === 'maps' &&
+                (boot ? (
+                  <MemoMapFinder boot={boot} onScan={rescan} liveMapId={live?.beatmap?.id ?? 0} />
+                ) : (
+                  <div className="empty">Читаю данные…</div>
+                ))}
+
+              {tab === 'profile' &&
+                (boot ? <MemoProfile boot={boot} onScan={rescan} /> : <div className="empty">Читаю данные…</div>)}
+
+              {tab === 'settings' &&
+                (boot ? (
+                  <MemoSettings boot={boot} onPatch={patch} onScan={rescan} onRefresh={refreshApi} />
+                ) : (
+                  <div className="empty">Читаю данные…</div>
+                ))}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+
+        {boot && !boot.settings.onboarded && <Onboarding boot={boot} onPatch={patch} onScan={rescan} />}
+
+        {boot && minElapsed && <UpdateBar />}
+        {boot && minElapsed && <RecordToast />}
+
+        <AnimatePresence>
+          {boot && greet && minElapsed && boot.settings.onboarded && !tourOpen && (
+            <Greeting boot={boot} onClose={closeGreet} />
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>{tourOpen && boot && <Tutorial onTab={setTab} onClose={closeTour} />}</AnimatePresence>
+
+        <AnimatePresence>
+          {!(boot && minElapsed) && (
+            <Splash
+              error={bootError}
+              onRetry={() => {
+                setBootError(null);
+                load();
+              }}
+            />
+          )}
         </AnimatePresence>
       </div>
-
-      {boot && !boot.settings.onboarded && <Onboarding boot={boot} onPatch={patch} onScan={rescan} />}
-
-      <AnimatePresence>
-        {boot && greet && minElapsed && boot.settings.onboarded && !tourOpen && (
-          <Greeting boot={boot} onClose={closeGreet} />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>{tourOpen && boot && <Tutorial onTab={setTab} onClose={closeTour} />}</AnimatePresence>
-
-      <AnimatePresence>
-        {!(boot && minElapsed) && (
-          <Splash
-            error={bootError}
-            onRetry={() => {
-              setBootError(null);
-              load();
-            }}
-          />
-        )}
-      </AnimatePresence>
-    </div>
+    </MotionConfig>
   );
 }

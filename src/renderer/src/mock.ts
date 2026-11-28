@@ -624,6 +624,8 @@ export function createMockBridge(): Bridge {
       ],
       paths: { osuDir: 'C:\\Users\\skamm\\AppData\\Local\\osu!', dataDir: 'data', envFile: '.env' },
       version: '0.1.0',
+      updates: { status: 'dev', version: '', percent: 0, error: '', checkedAt: 0, manual: false },
+      campaign: null,
     }),
     scan: async () => scan,
     replayLatest: async () => ({ ok: false, error: 'empty', path: '', analysis: null }),
@@ -716,6 +718,25 @@ export function createMockBridge(): Bridge {
       ...patch,
     }),
     openExternal: async () => true,
+    updates: {
+      state: async () => ({ status: 'dev', version: '', percent: 0, error: '', checkedAt: 0, manual: false }),
+      check: async () => ({
+        status: 'current',
+        version: '0.3.0',
+        percent: 0,
+        error: '',
+        checkedAt: Date.now(),
+        manual: true,
+      }),
+      download: async () => ({ status: 'idle', version: '', percent: 0, error: '', checkedAt: 0, manual: false }),
+      install: async () => false,
+      onState: () => () => {},
+    },
+    quickSearch: async () => ({ ok: true, total: 0, maps: [] }),
+    campaignPlan: async () => ({ ok: false, error: 'preview', campaign: null }),
+    campaignReset: async () => ({ ok: true, campaign: null }),
+    campaignState: async () => null,
+    onRecord: () => () => {},
     onLive: (cb) => {
       listeners.push(cb);
       cb(engine.payload());

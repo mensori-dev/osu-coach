@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import type { Bootstrap, Settings } from '../types';
+import { useEffect, useState } from 'react';
+import type { Bootstrap, Settings, UpdateState } from '../types';
 import { bridge } from '../hooks';
 import { fmtInt } from '../utils';
 import { THEMES } from '../theme';
@@ -51,6 +51,70 @@ const DEVICE_LABEL: Record<Settings['device'], string> = {
   touchpad: 'тачпад',
   unknown: '—',
 };
+
+const UPDATE_TEXT: Record<UpdateState['status'], string> = {
+  idle: 'ещё не проверял',
+  dev: 'в дев-режиме обновления не проверяются',
+  checking: 'проверяю…',
+  current: 'у тебя последняя версия',
+  available: 'есть новая версия',
+  downloading: 'качаю…',
+  ready: 'скачано, жду перезапуска',
+  error: 'проверить не вышло',
+};
+
+function UpdateRow() {
+  const [state, setState] = useState<UpdateState | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    bridge.updates
+      .state()
+      .then((value) => {
+        if (alive) setState(value);
+      })
+      .catch(() => {});
+    const off = bridge.updates.onState((value) => {
+      if (alive) setState(value);
+    });
+    return () => {
+      alive = false;
+      off();
+    };
+  }, []);
+
+  const status = state?.status ?? 'idle';
+  const busy = status === 'checking' || status === 'downloading';
+
+  return (
+    <>
+      <p className="set-desc">
+        Обновления берутся с GitHub, откуда ты скачал приложение. Ничего не качается само: жмёшь «обновить» — и версия
+        ставится поверх, настройки и данные остаются.
+      </p>
+      <p className="note">
+        {UPDATE_TEXT[status]}
+        {state?.version && status === 'available' ? ` · ${state.version}` : ''}
+        {status === 'downloading' ? ` · ${state?.percent ?? 0}%` : ''}
+      </p>
+      <div className="actions" style={{ justifyContent: 'flex-start' }}>
+        <button className="btn ghost" onClick={() => void bridge.updates.check()} disabled={busy}>
+          <IconRefresh /> проверить
+        </button>
+        {status === 'available' && (
+          <button className="btn" onClick={() => void bridge.updates.download()}>
+            <IconDownload /> скачать {state?.version}
+          </button>
+        )}
+        {status === 'ready' && (
+          <button className="btn" onClick={() => void bridge.updates.install()}>
+            перезапустить
+          </button>
+        )}
+      </div>
+    </>
+  );
+}
 
 export function SettingsView({ boot, onPatch, onScan, onRefresh }: Props) {
   const [user, setUser] = useState(boot.settings.user);
@@ -412,6 +476,11 @@ export function SettingsView({ boot, onPatch, onScan, onRefresh }: Props) {
             <b>{boot.settings.music}</b>
           </div>
         )}
+      </div>
+
+      <div className="card set-card">
+        <div className="set-title">обновления</div>
+        <UpdateRow />
       </div>
 
       <div className="card set-card">

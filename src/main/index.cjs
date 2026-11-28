@@ -13,6 +13,8 @@ const { normalizeTosu, idlePayload } = require('./live.cjs');
 const { Demo } = require('./demo.cjs');
 const { startTosu } = require('./tosu-launch.cjs');
 const replay = require('./replay.cjs');
+const updater = require('./updater.cjs');
+const { CampaignStore, build: buildCampaign, sync: syncCampaign, view: viewCampaign } = require('./campaign.cjs');
 
 const rootDir = app.getAppPath();
 loadEnv([
@@ -26,6 +28,7 @@ const settingsFile = path.join(dataDir, 'settings.json');
 const scanFile = path.join(dataDir, 'scan.json');
 const apiCacheFile = path.join(dataDir, 'api-cache.json');
 const profileFile = path.join(dataDir, 'profile.json');
+const campaignStore = new CampaignStore(path.join(dataDir, 'campaign.json'));
 const defaults = {
   user: process.env.OSU_USER || '',
   demo: false,
@@ -159,10 +162,28 @@ function rescan() {
     writeJson(scanFile, scan);
     recordFacts(scan);
     installedCache = { at: 0, ids: [] };
+    syncCampaignState();
   } catch (err) {
     scan = { ok: false, error: String(err.message || err), scannedAt: Date.now() };
   }
   return scan;
+}
+
+/**
+ * The campaign reads the same scores.db as everything else: a new play either
+ * checks a stage off or sets a personal record, and the renderer hears about it
+ * right away instead of on the next tab switch.
+ */
+function syncCampaignState() {
+  const state = campaignStore.load();
+  if (!state || !scan?.ok) return;
+  const result = syncCampaign(state, scan);
+  if (result.changed) campaignStore.save(state);
+  if (result.records.length) {
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.isDestroyed()) w.webContents.send('record', result.records);
+    }
+  }
 }
 
 /**
@@ -339,10 +360,75 @@ function bootstrap() {
     history: Array.isArray(profile.facts) ? profile.facts : [],
     paths: { osuDir: activeOsuDir(), dataDir, envFile: path.join(rootDir, '.env') },
     version: app.getVersion(),
+    updates: updater.current(),
+    campaign: viewCampaign(campaignStore.load()),
   };
 }
 
 ipcMain.handle('bootstrap', () => bootstrap());
+
+ipcMain.handle('update:state', () => updater.current());
+ipcMain.handle('update:check', () => updater.check(true));
+ipcMain.handle('update:download', () => updater.download());
+ipcMain.handle('update:install', () => updater.install());
+
+/** One taste-matched map for the last stage; null when there is no network. */
+async function findFinalMap() {
+  if (!scan?.ok) return null;
+  const comfort = scan.comfortStar ?? 3.5;
+  const base = {
+    minStars: Math.max(1, Math.round((comfort + 0.4) * 10) / 10),
+    maxStars: Math.round((comfort + 1.2) * 10) / 10,
+    target: Math.round((comfort + 0.75) * 10) / 10,
+    limit: 12,
+    excludeSetIds: installedSetIds(),
+  };
+
+  // First try the player's own artists and mappers. If every map they already
+  // own is excluded, that pool can run dry — then widen to the taste-filtered
+  // general rating instead of silently handing out a library map.
+  const attempts = [
+    { ...base, preferences: scan.preferences || null, music: settings.music || '' },
+    { ...base, preferences: null, music: settings.music || '' },
+  ];
+
+  for (const params of attempts) {
+    try {
+      const result = await api.searchMaps(params);
+      if (!result.ok) continue;
+      const pick = result.maps.find(
+        (map) =>
+          map.drainTime >= 55 && map.drainTime <= 210 && map.stars >= comfort + 0.35 && map.stars <= comfort + 1.3,
+      );
+      if (pick) return pick;
+    } catch {
+      // try the next pool
+    }
+  }
+  return null;
+}
+
+ipcMain.handle('campaign:plan', async () => {
+  const existing = campaignStore.load();
+  if (existing?.stages?.length) {
+    syncCampaignState();
+    return { ok: true, campaign: viewCampaign(existing) };
+  }
+  if (!scan?.ok) return { ok: false, error: 'no-scan', campaign: null };
+
+  const finalMap = await findFinalMap();
+  const state = buildCampaign(scan, finalMap);
+  state.newMapSource = finalMap ? 'osu' : 'library';
+  campaignStore.save(state);
+  return { ok: true, campaign: viewCampaign(state) };
+});
+
+ipcMain.handle('campaign:reset', () => {
+  campaignStore.reset();
+  return { ok: true, campaign: null };
+});
+
+ipcMain.handle('campaign:state', () => viewCampaign(campaignStore.load()));
 
 ipcMain.handle('scan', () => rescan());
 
@@ -456,6 +542,18 @@ ipcMain.handle('maps:search', async (event, params) => {
     return await api.searchMaps({ ...params, preferences: scan?.preferences || null, music: settings.music || '' });
   } catch (err) {
     return { ok: false, error: String(err.message || err), total: 0, maps: [], next: null };
+  }
+});
+
+ipcMain.handle('maps:quick', async (event, params) => {
+  try {
+    return await api.quickSearch(params?.text, {
+      limit: Math.max(1, Math.min(30, Number(params?.limit) || 20)),
+      target: Number(params?.target) || 0,
+      excludeSetIds: Array.isArray(params?.excludeSetIds) ? params.excludeSetIds : [],
+    });
+  } catch (err) {
+    return { ok: false, error: String(err.message || err), total: 0, maps: [] };
   }
 });
 
@@ -818,6 +916,15 @@ if (!app.requestSingleInstanceLock()) {
     app.setAppUserModelId('com.mens0ri.osucoach');
     createWindow();
     if (settings.overlay) createOverlay();
+
+    updater.init({
+      dataDir,
+      onState: (state) => {
+        for (const w of BrowserWindow.getAllWindows()) {
+          if (!w.isDestroyed()) w.webContents.send('update', state);
+        }
+      },
+    });
 
     if (!scan || Date.now() - (scan.scannedAt || 0) > 5 * 60 * 1000) rescan();
     watchOsuDir();

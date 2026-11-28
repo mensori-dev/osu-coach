@@ -93,6 +93,9 @@ function isAnimeish(map) {
 function buildTaste(music, preferences) {
   const text = String(music || '').toLowerCase();
   const artists = [...new Set((preferences?.artists || []).map((item) => item.name).filter(Boolean))];
+  const top = artists.slice(0, 5);
+  const cjkShare = top.length >= 3 ? top.filter(hasCjk).length / top.length : 0;
+  const cyrShare = top.length ? top.filter(hasCyrillic).length / top.length : 0;
   const languages = [];
   const genres = [];
 
@@ -103,13 +106,22 @@ function buildTaste(music, preferences) {
     if (rule.words.some((word) => text.includes(word))) genres.push(rule.genre);
   }
 
-  // What is in their headphones is also visible in what they already play.
-  if (artists.some(hasCyrillic) && !languages.includes('russian')) languages.push('russian');
-  if (artists.filter(hasCjk).length >= 2) languages.push('japanese');
+  // Japanese is only assumed when it is actually a majority of what the player
+  // plays. Two CJK artists in a top-5 is normal for any osu! library and used
+  // to switch the anime filter off for everyone — that is how a Capsize listener
+  // ended up with vocaloid farm maps.
+  if (!languages.includes('japanese') && cjkShare >= 0.5) languages.push('japanese');
+  if (!languages.includes('russian') && cyrShare >= 0.35) languages.push('russian');
   if (!languages.length) languages.push('english');
 
   const japanese = languages.includes('japanese');
-  return { languages: [...new Set(languages)], genres, artists, avoidJapanese: !japanese };
+  return {
+    languages: [...new Set(languages)],
+    genres,
+    artists,
+    cjkShare,
+    avoidJapanese: !japanese,
+  };
 }
 
 /**
@@ -126,11 +138,14 @@ function tasteScore(map, preferences, target, taste) {
   const maxCreator = creators[0]?.plays || 1;
   const maxArtist = artists[0]?.plays || 1;
 
+  // Artist and mapper are the strongest signals of taste: they are what the
+  // player actually chose to listen to and play, not what the global rating
+  // happened to push.
   const creator = creators.find((item) => item.name.toLowerCase() === map.mapper.toLowerCase());
-  if (creator) score += 34 + 26 * (creator.plays / maxCreator);
+  if (creator) score += 40 + 20 * (creator.plays / maxCreator);
 
   const artist = artists.find((item) => item.name.toLowerCase() === map.artist.toLowerCase());
-  if (artist) score += 30 + 24 * (artist.plays / maxArtist);
+  if (artist) score += 58 + 26 * (artist.plays / maxArtist);
 
   const bpmMedian = preferences.bpm?.median;
   if (bpmMedian) score += 22 * Math.max(0, 1 - Math.abs(map.bpm - bpmMedian) / 45);
@@ -147,12 +162,11 @@ function tasteScore(map, preferences, target, taste) {
 
   if (taste) {
     if (taste.avoidJapanese) {
-      if (map.languageId === LANG_ID.japanese) score -= 55;
-      else if (isAnimeish(map)) score -= 24;
+      if (map.languageId === LANG_ID.japanese) score -= 90;
+      if (isAnimeish(map)) score -= 45;
     }
-    if (taste.languages.includes('russian') && map.languageId === LANG_ID.russian) score += 42;
-    if (taste.languages.includes('english') && map.languageId === LANG_ID.english) score += 24;
-    if (taste.artists.some((name) => name.toLowerCase() === map.artist.toLowerCase())) score += 20;
+    if (taste.languages.includes('russian') && map.languageId === LANG_ID.russian) score += 46;
+    if (taste.languages.includes('english') && map.languageId === LANG_ID.english) score += 20;
   }
 
   return score;
@@ -167,12 +181,10 @@ function tasteReasons(map, preferences, target, taste) {
 
   const creators = preferences.creators || [];
   const artists = preferences.artists || [];
-  if (creators.some((item) => item.name.toLowerCase() === map.mapper.toLowerCase())) {
-    reasons.push('любимый маппер');
-  }
-  if (artists.some((item) => item.name.toLowerCase() === map.artist.toLowerCase())) {
-    reasons.push('любимый артист');
-  }
+  const creator = creators.find((item) => item.name.toLowerCase() === map.mapper.toLowerCase());
+  const artist = artists.find((item) => item.name.toLowerCase() === map.artist.toLowerCase());
+  if (artist) reasons.push(`твой артист · ${artist.plays} ${artist.plays === 1 ? 'плей' : 'плеев'}`);
+  if (creator) reasons.push(`твой маппер · ${creator.plays} ${creator.plays === 1 ? 'плей' : 'плеев'}`);
   const bpmMedian = preferences.bpm?.median;
   if (bpmMedian && Math.abs(map.bpm - bpmMedian) <= 12) reasons.push('тот же темп');
   const lengthMedian = preferences.length?.median;
@@ -182,7 +194,6 @@ function tasteReasons(map, preferences, target, taste) {
   if (taste) {
     if (map.languageId === LANG_ID.russian) reasons.push('русский трек');
     else if (map.languageId === LANG_ID.english) reasons.push('западный трек');
-    else if (taste.avoidJapanese && isAnimeish(map)) reasons.push('похоже на аниме');
   }
 
   return reasons.slice(0, 3);
@@ -369,19 +380,17 @@ class OsuApi {
       .map((map) => ({ map, score: tasteScore(map, preferences, target, taste) }))
       .sort((a, b) => b.score - a.score || Math.abs(a.map.stars - target) - Math.abs(b.map.stars - target));
 
-    // When the player is not into Japanese music, anime/doujin maps go last, so
-    // the page they actually see is about their taste. They are only used if
-    // there is nothing better.
-    const pools = taste.avoidJapanese
-      ? [maps.filter((e) => !isAnimeish(e.map)), maps.filter((e) => isAnimeish(e.map))]
-      : [maps];
+    // When the player is not into Japanese music, anime/doujin maps never take
+    // the main list. If there is not enough else, they go to a separate
+    // «ближайшее» block, honestly labelled, instead of quietly filling the page.
+    const anime = maps.filter((entry) => isAnimeish(entry.map));
+    const mainPool = taste.avoidJapanese ? maps.filter((entry) => !isAnimeish(entry.map)) : maps;
 
-    // Keep the list varied: no mapper or artist takes over the whole page.
-    const picked = [];
-    const perMapper = new Map();
-    const perArtist = new Map();
-    const seen = new Set();
-    for (const pool of pools) {
+    const pickFrom = (pool, max) => {
+      const picked = [];
+      const perMapper = new Map();
+      const perArtist = new Map();
+      const seen = new Set();
       for (const entry of pool) {
         if (seen.has(entry.map.setId)) continue;
         const mapper = entry.map.mapper.toLowerCase();
@@ -391,20 +400,89 @@ class OsuApi {
         perMapper.set(mapper, (perMapper.get(mapper) || 0) + 1);
         perArtist.set(artist, (perArtist.get(artist) || 0) + 1);
         seen.add(entry.map.setId);
-        picked.push({ ...entry.map, why: tasteReasons(entry.map, preferences, target, taste) });
-        if (picked.length >= limit) break;
+        picked.push(entry.map);
+        if (picked.length >= max) break;
       }
-      if (picked.length >= limit) break;
-    }
+      return picked;
+    };
+
+    const main = pickFrom(mainPool, limit).map((map) => ({
+      ...map,
+      why: tasteReasons(map, preferences, target, taste),
+    }));
+
+    const fallback = taste.avoidJapanese
+      ? pickFrom(anime, 6).map((map) => ({
+          ...map,
+          why: ['не твой жанр', 'ближайшее из остального'],
+        }))
+      : [];
 
     const value = {
       ok: true,
       total: base.total || maps.length,
-      maps: picked,
+      maps: main,
+      fallback,
       next: base.cursor_string || null,
     };
     this.searchCache.set(key, { at: Date.now(), value });
     return value;
+  }
+
+  /**
+   * Plain text search over osu! beatmapsets: «Capsize», «tigah woods», a mapper.
+   * The fastest way to stop arguing with recommendations — type what you want.
+   */
+  async quickSearch(text, { limit = 20, target = 0, excludeSetIds = [] } = {}) {
+    if (!this.configured()) return { ok: false, error: 'no credentials', maps: [], total: 0 };
+    const query = String(text || '')
+      .trim()
+      .slice(0, 80);
+    if (query.length < 2) return { ok: true, maps: [], total: 0 };
+
+    const key = `q:${query.toLowerCase()}:${limit}:${Math.round(target * 10)}`;
+    const cached = this.searchCache.get(key);
+    if (cached && Date.now() - cached.at < 2 * 60 * 1000) return cached.value;
+
+    try {
+      const data = await this.request(`/api/v2/beatmapsets/search?m=0&s=any&q=${encodeURIComponent(query)}`);
+      const excluded = new Set(excludeSetIds);
+      const maps = [];
+      for (const set of data?.beatmapsets || []) {
+        if (excluded.has(set.id)) continue;
+        const diffs = (set.beatmaps || []).filter((beatmap) => beatmap.mode === 'osu');
+        if (!diffs.length) continue;
+        const pick = diffs.reduce((best, beatmap) => {
+          if (!best) return beatmap;
+          return Math.abs(beatmap.difficulty_rating - target) < Math.abs(best.difficulty_rating - target)
+            ? beatmap
+            : best;
+        }, null);
+        maps.push({
+          id: pick.id,
+          setId: set.id,
+          artist: set.artist || '',
+          title: set.title || '',
+          diff: pick.version || '',
+          mapper: set.creator || '',
+          stars: pick.difficulty_rating || 0,
+          bpm: pick.bpm || 0,
+          drainTime: pick.total_length || 0,
+          ar: pick.ar ?? 0,
+          cs: pick.cs ?? 0,
+          od: pick.od ?? 0,
+          cover: set.covers?.cover || set.covers?.list || set.covers?.card || '',
+          status: set.status || '',
+          why: [],
+        });
+        if (maps.length >= limit) break;
+      }
+      const value = { ok: true, maps, total: data?.total || maps.length, next: null };
+      this.searchCache.set(key, { at: Date.now(), value });
+      return value;
+    } catch (err) {
+      return { ok: false, error: String(err.message || err), maps: [], total: 0 };
+    }
   }
 
   snapshot() {

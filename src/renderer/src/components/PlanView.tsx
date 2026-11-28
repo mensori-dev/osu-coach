@@ -4,6 +4,7 @@ import { fmtNum, fmtTime, plural } from '../utils';
 import { IconArrowRight, IconSpark, IconStar, IconTarget } from './Icons';
 import { PreviewButton } from './Preview';
 import { NextStepBanner } from './Progress';
+import { Campaign } from './Campaign';
 import { openInOsu } from '../openMap';
 
 interface Props {
@@ -152,6 +153,7 @@ export function PlanView({ boot, onOpenMaps }: Props) {
   const comfort = scan?.comfortStar ?? 3.5;
   const goals = useMemo(() => skillGoals(boot), [boot]);
   const [note, setNote] = useState('');
+  const [mode, setMode] = useState<'run' | 'skills'>('run');
 
   const nextStar = useMemo(() => {
     const rows = (scan?.buckets ?? []).filter((bucket) => bucket.count >= 3).sort((a, b) => a.star - b.star);
@@ -187,7 +189,7 @@ export function PlanView({ boot, onOpenMaps }: Props) {
     <div className="plan fade-in">
       <div className="plan-head">
         <div>
-          <div className="card-title">план до следующей ступени</div>
+          <div className="card-title">{mode === 'run' ? 'забег по своим картам' : 'план до следующей ступени'}</div>
           <div className="maps-stats">
             <span>
               комфорт <b>{fmtNum(comfort, 1)}★</b>
@@ -195,79 +197,97 @@ export function PlanView({ boot, onOpenMaps }: Props) {
             <span>считаю по твоим скорам, без ИИ</span>
           </div>
         </div>
-        <button className="btn ghost" onClick={onOpenMaps}>
-          <IconSpark size={13} /> новые карты
-        </button>
+        <div className="plan-head-actions">
+          <div className="seg">
+            <button className={mode === 'run' ? 'on' : ''} onClick={() => setMode('run')}>
+              забег
+            </button>
+            <button className={mode === 'skills' ? 'on' : ''} onClick={() => setMode('skills')}>
+              навыки
+            </button>
+          </div>
+          <button className="btn ghost" onClick={onOpenMaps}>
+            <IconSpark size={13} /> новые карты
+          </button>
+        </div>
       </div>
 
       {note && <div className="bd-open-note">{note}</div>}
 
-      <NextStepBanner buckets={scan.buckets} comfort={scan.comfortStar} />
+      {mode === 'run' && <Campaign boot={boot} onOpenMaps={onOpenMaps} />}
 
-      {weakest && strongest && (
-        <div className="plan-verdict">
-          <IconTarget size={15} />
-          <p>
-            Слабое место — <b>{weakest.label}</b> ({weakest.value}). Сильное — <b>{strongest.label}</b> (
-            {strongest.value}). Это не приговор, а порядок работы: сначала слабое, потом силу закрепляешь.
-          </p>
-        </div>
-      )}
+      {mode === 'skills' && (
+        <>
+          <NextStepBanner buckets={scan.buckets} comfort={scan.comfortStar} />
 
-      <div className="goal-grid">
-        {goals.map((goal) => (
-          <GoalCard key={goal.key} goal={goal} />
-        ))}
-      </div>
-
-      <section className="plan-section">
-        <div className="section-title">
-          <IconTarget size={13} /> чистые проходы
-        </div>
-        <p className="section-note">Карты, где ты уже близко к 97%. Здесь растёт точность, а сложность не мешает.</p>
-        <div className="card map-list plan-list">
-          {clean.length ? (
-            clean.map((map) => (
-              <PlanRow
-                key={map.id}
-                map={map}
-                reason={`до 97% ещё ${fmtNum(Math.max(0.1, 97 - map.bestAcc), 1)} п.п.`}
-                onOpen={() => void open(map)}
-              />
-            ))
-          ) : (
-            <div className="empty">Нет карт, где точность ниже 97.5% — уже чисто. Переходи к шагу вверх.</div>
-          )}
-        </div>
-      </section>
-
-      <section className="plan-section">
-        <div className="section-title">
-          <IconStar size={13} /> шаг вверх
-        </div>
-        <p className="section-note">
-          {nextStar != null
-            ? `Чуть выше комфорта, но не сразу ${fmtNum(nextStar, 1)}★. Здесь поднимается потолок, а не цифра на табло.`
-            : 'Сложность выше комфорта: один-два прохода, чтобы тело привыкло к темпу.'}
-        </p>
-        <div className="card map-list plan-list">
-          {push.length ? (
-            push.map((map) => (
-              <PlanRow
-                key={map.id}
-                map={map}
-                reason={`лучшая ${fmtNum(map.bestAcc, 1)}% · цель 92%`}
-                onOpen={() => void open(map)}
-              />
-            ))
-          ) : (
-            <div className="empty">
-              Подходящих карт в базе нет. Открой «Карты» и скачай что-нибудь на {fmtNum(comfort + 0.3, 1)}–
-              {fmtNum(comfort + 0.7, 1)}★.
+          {weakest && strongest && (
+            <div className="plan-verdict">
+              <IconTarget size={15} />
+              <p>
+                Слабое место — <b>{weakest.label}</b> ({weakest.value}). Сильное — <b>{strongest.label}</b> (
+                {strongest.value}). Это не приговор, а порядок работы: сначала слабое, потом силу закрепляешь.
+              </p>
             </div>
           )}
-        </div>
-      </section>
+
+          <div className="goal-grid">
+            {goals.map((goal) => (
+              <GoalCard key={goal.key} goal={goal} />
+            ))}
+          </div>
+
+          <section className="plan-section">
+            <div className="section-title">
+              <IconTarget size={13} /> чистые проходы
+            </div>
+            <p className="section-note">
+              Карты, где ты уже близко к 97%. Здесь растёт точность, а сложность не мешает.
+            </p>
+            <div className="card map-list plan-list">
+              {clean.length ? (
+                clean.map((map) => (
+                  <PlanRow
+                    key={map.id}
+                    map={map}
+                    reason={`до 97% ещё ${fmtNum(Math.max(0.1, 97 - map.bestAcc), 1)} п.п.`}
+                    onOpen={() => void open(map)}
+                  />
+                ))
+              ) : (
+                <div className="empty">Нет карт, где точность ниже 97.5% — уже чисто. Переходи к шагу вверх.</div>
+              )}
+            </div>
+          </section>
+
+          <section className="plan-section">
+            <div className="section-title">
+              <IconStar size={13} /> шаг вверх
+            </div>
+            <p className="section-note">
+              {nextStar != null
+                ? `Чуть выше комфорта, но не сразу ${fmtNum(nextStar, 1)}★. Здесь поднимается потолок, а не цифра на табло.`
+                : 'Сложность выше комфорта: один-два прохода, чтобы тело привыкло к темпу.'}
+            </p>
+            <div className="card map-list plan-list">
+              {push.length ? (
+                push.map((map) => (
+                  <PlanRow
+                    key={map.id}
+                    map={map}
+                    reason={`лучшая ${fmtNum(map.bestAcc, 1)}% · цель 92%`}
+                    onOpen={() => void open(map)}
+                  />
+                ))
+              ) : (
+                <div className="empty">
+                  Подходящих карт в базе нет. Открой «Карты» и скачай что-нибудь на {fmtNum(comfort + 0.3, 1)}–
+                  {fmtNum(comfort + 0.7, 1)}★.
+                </div>
+              )}
+            </div>
+          </section>
+        </>
+      )}
     </div>
   );
 }
