@@ -14,7 +14,13 @@ const { Demo } = require('./demo.cjs');
 const { startTosu } = require('./tosu-launch.cjs');
 const replay = require('./replay.cjs');
 const updater = require('./updater.cjs');
-const { CampaignStore, build: buildCampaign, sync: syncCampaign, view: viewCampaign } = require('./campaign.cjs');
+const {
+  CampaignStore,
+  build: buildCampaign,
+  sync: syncCampaign,
+  credit: creditCampaign,
+  view: viewCampaign,
+} = require('./campaign.cjs');
 
 const rootDir = app.getAppPath();
 loadEnv([
@@ -115,9 +121,41 @@ const coverCache = new Map();
  * osu! writes scores.db when it leaves the results screen. Watching the game
  * folder means the app can rescan and push fresh numbers to the renderer by
  * itself — no button, no tab switch, no waiting for a poll.
+ *
+ * fs.watch alone is not enough on Windows: it misses saves often enough that a
+ * finished play sat uncredited for minutes. A cheap stat poll next to it is the
+ * difference between «отметилось» and «где оно».
  */
 let osuWatch = null;
 let osuWatchTimer = null;
+let osuPoll = null;
+let osuStamp = '';
+
+function fileStamp(file) {
+  try {
+    const st = fs.statSync(file);
+    return `${Math.round(st.mtimeMs)}:${st.size}`;
+  } catch {
+    return '';
+  }
+}
+
+function stampOf(dir) {
+  return `${fileStamp(path.join(dir, 'scores.db'))}|${fileStamp(path.join(dir, 'osu!.db'))}`;
+}
+
+/** One file save must not turn into three scans. */
+function scheduleRescan(delay = 900) {
+  if (osuWatchTimer) clearTimeout(osuWatchTimer);
+  osuWatchTimer = setTimeout(() => {
+    osuWatchTimer = null;
+    installedCache = { at: 0, ids: [] };
+    rescan();
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.isDestroyed()) w.webContents.send('data', bootstrap());
+    }
+  }, delay);
+}
 
 function watchOsuDir() {
   if (osuWatch) {
@@ -132,27 +170,32 @@ function watchOsuDir() {
     clearTimeout(osuWatchTimer);
     osuWatchTimer = null;
   }
+  if (osuPoll) {
+    clearInterval(osuPoll);
+    osuPoll = null;
+  }
 
   const dir = activeOsuDir();
   if (!dir) return;
 
+  osuStamp = stampOf(dir);
+
   try {
     osuWatch = fs.watch(dir, { persistent: false }, (_event, filename) => {
       const name = String(filename || '').toLowerCase();
-      if (name !== 'scores.db' && name !== 'osu!.db') return;
-      if (osuWatchTimer) clearTimeout(osuWatchTimer);
-      osuWatchTimer = setTimeout(() => {
-        osuWatchTimer = null;
-        installedCache = { at: 0, ids: [] };
-        rescan();
-        for (const w of BrowserWindow.getAllWindows()) {
-          if (!w.isDestroyed()) w.webContents.send('data', bootstrap());
-        }
-      }, 1200);
+      if (name && name !== 'scores.db' && name !== 'osu!.db') return;
+      scheduleRescan(800);
     });
   } catch {
-    // Folder watching is a bonus; manual rescans still work without it.
+    // Folder watching is a bonus; the poll and manual rescans still work.
   }
+
+  osuPoll = setInterval(() => {
+    const next = stampOf(dir);
+    if (!next.trim() || next === osuStamp) return;
+    osuStamp = next;
+    scheduleRescan(500);
+  }, 2500);
 }
 
 function rescan() {
@@ -213,22 +256,70 @@ function broadcast(payload) {
   }
 }
 
+let lastLiveState = 'idle';
+let creditedRun = '';
+
+/**
+ * The results screen is the first moment we know the run is over, and osu! has
+ * not written scores.db yet. Credit the stage right there so the track ticks
+ * while the player is still looking at the score, then let the db confirm it.
+ */
+function creditFromLive(payload) {
+  if (settings.demo) return;
+  if (payload.state !== 'results' || !payload.beatmap || !payload.play) {
+    if (payload.state !== 'results') creditedRun = '';
+    return;
+  }
+  const key = `${payload.beatmap.id}:${payload.play.accuracy}:${payload.play.hits?.miss ?? 0}`;
+  if (key === creditedRun) return;
+  creditedRun = key;
+
+  const state = campaignStore.load();
+  if (!state) return;
+  const result = creditCampaign(state, {
+    id: payload.beatmap.id,
+    acc: payload.play.accuracy,
+    miss: payload.play.hits?.miss ?? 0,
+    at: Date.now(),
+  });
+  if (!result) return;
+
+  campaignStore.save(state);
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (!w.isDestroyed()) w.webContents.send('data', bootstrap());
+  }
+}
+
 function tick() {
   const now = Date.now();
   const dt = Math.min(120, demoLast ? now - demoLast : 50);
   demoLast = now;
 
+  let payload;
   if (settings.demo) {
     demo.step(dt);
-    broadcast(demo.payload());
-    return;
+    payload = demo.payload();
+  } else {
+    payload = tosu.connected
+      ? normalizeTosu(tosu.state, tosu.hitErrors, tosu.keys, settings.tosuPort)
+      : idlePayload(false, settings.tosuPort);
   }
 
-  broadcast(
-    tosu.connected
-      ? normalizeTosu(tosu.state, tosu.hitErrors, tosu.keys, settings.tosuPort)
-      : idlePayload(false, settings.tosuPort),
-  );
+  // A finished play is credited the moment osu! writes it, but the write lands
+  // a little after the results screen closes — knock a few times instead of
+  // waiting for the next file event.
+  if (payload.state !== lastLiveState) {
+    const left = lastLiveState === 'results' || lastLiveState === 'playing';
+    lastLiveState = payload.state;
+    if (left && payload.state !== 'results' && payload.state !== 'playing') {
+      for (const delay of [900, 2500, 6000, 12000]) {
+        setTimeout(() => scheduleRescan(0), delay);
+      }
+    }
+  }
+
+  broadcast(payload);
+  creditFromLive(payload);
 }
 
 function loadRenderer(target, hash) {

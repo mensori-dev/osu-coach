@@ -166,6 +166,38 @@ function judge(stage, play) {
   return play.acc >= stage.targetAcc && play.miss <= stage.maxMiss;
 }
 
+function round2(value) {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Credits a play the second the results screen appears, without waiting for
+ * scores.db. The db scan lands the same play later; sync() drops the live copy
+ * so the attempt list stays honest instead of showing one play twice.
+ */
+function credit(state, play) {
+  if (!state?.stages?.length || !play?.id || !(play.acc > 0)) return null;
+  const stage = state.stages.find((item) => item.map.id === play.id);
+  if (!stage) return null;
+
+  const at = play.at || Date.now();
+  const acc = round2(play.acc);
+  if (stage.attempts.some((item) => Math.abs(item.at - at) < 60 * 1000 && Math.abs(item.acc - acc) < 0.6)) {
+    return null;
+  }
+
+  const attempt = { at, acc, miss: play.miss || 0, passed: judge(stage, { ...play, acc }), live: true };
+  stage.attempts.push(attempt);
+  if (stage.attempts.length > 40) stage.attempts = stage.attempts.slice(-40);
+  if (!stage.best || acc > stage.best.acc) stage.best = { ...attempt };
+  if (attempt.passed && !stage.passed) {
+    stage.passed = true;
+    stage.passedAt = at;
+  }
+  state.updatedAt = Date.now();
+  return { stage: stage.index, passed: attempt.passed, acc, miss: attempt.miss };
+}
+
 /**
  * Pulls every new play of every stage map out of a fresh scan. Called after
  * each scores.db rescan, so a stage ticks itself off without a button.
@@ -180,6 +212,15 @@ function sync(state, scan) {
       (play) => play.id === stage.map.id && play.at > (state.createdAt || 0) - 1000 && play.acc > 0,
     );
     for (const play of plays) {
+      // The live attempt taken from the results screen and the one scores.db
+      // gives us are the same play: keep the database copy, it is authoritative.
+      const twin = stage.attempts.findIndex(
+        (item) => item.live && Math.abs(item.acc - play.acc) < 1.2 && Math.abs(item.at - play.at) < 15 * 60 * 1000,
+      );
+      if (twin >= 0) {
+        stage.attempts.splice(twin, 1);
+        changed = true;
+      }
       if (sameAttempt(stage, play)) continue;
       const attempt = {
         at: play.at,
@@ -283,4 +324,4 @@ class CampaignStore {
   }
 }
 
-module.exports = { CampaignStore, build, sync, view, progress, stageNotes, MAX_LENGTH };
+module.exports = { CampaignStore, build, sync, credit, view, progress, stageNotes, MAX_LENGTH };

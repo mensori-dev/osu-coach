@@ -465,6 +465,8 @@ export interface CampaignAttempt {
   acc: number;
   miss: number;
   passed: boolean;
+  /** Taken from the results screen; replaced by the scores.db copy later. */
+  live?: boolean;
 }
 
 export interface CampaignStage {
